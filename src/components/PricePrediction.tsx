@@ -27,75 +27,50 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
   const [metrics, setMetrics] = useState<ModelMetrics | null>(null);
   const [changePercentages, setChangePercentages] = useState<Record<TimeFrame, string>>({} as Record<TimeFrame, string>);
   const [modelStatus, setModelStatus] = useState<string>('');
-  const [tfSupported, setTfSupported] = useState<boolean | null>(null);
 
-  // Only check TensorFlow support once on initial mount
   useEffect(() => {
-    const checkTensorflowSupport = async () => {
-      try {
-        // Use a simple try/catch to check if TF is available
-        if (tf && typeof tf.ready === 'function') {
-          await tf.ready();
-          setTfSupported(true);
-          setModelStatus('TensorFlow.js is ready');
-        } else {
-          setTfSupported(false);
-          setError('TensorFlow.js is not supported in this browser');
-        }
-      } catch (err) {
-        setTfSupported(false);
-        setError('TensorFlow.js is not supported in this browser');
-        console.error('TensorFlow.js not supported:', err);
-      }
-    };
-    
-    checkTensorflowSupport();
+    if (coinId) {
+      checkTensorflowSupport();
+    }
   }, []);
 
-  // Only fetch predictions when coinId or currency changes and TF is supported
   useEffect(() => {
-    if (coinId && tfSupported === true) {
+    if (coinId) {
       fetchPredictions();
     }
-  }, [coinId, currency, tfSupported]);
+  }, [coinId, currency]);
+
+  const checkTensorflowSupport = async () => {
+    try {
+      await tf.ready();
+      setModelStatus('TensorFlow.js is ready');
+    } catch (err) {
+      setError('TensorFlow.js is not supported in this browser');
+      console.error('TensorFlow.js not supported:', err);
+    }
+  };
 
   const fetchPredictions = async () => {
-    if (!coinId || tfSupported === false) return;
+    if (!coinId) return;
     
     setIsLoading(true);
     setError(null);
     setModelStatus('Preparing optimized model...');
     
     try {
-      // Check if API is available first
-      const isTfAvailable = await predictionsAPI.isApiAvailable().catch(() => false);
+      // Check if browser supports TensorFlow.js
+      const isTfAvailable = await predictionsAPI.isApiAvailable();
       
       if (!isTfAvailable) {
-        setError('Prediction API is not available. Try again later.');
+        setError('Your browser does not support TensorFlow.js. Try using a different browser.');
         setIsLoading(false);
         return;
       }
       
       setModelStatus('Training lightweight model with recent data...');
       
-      // Get predictions with a timeout to prevent long-running operations
-      const fetchWithTimeout = new Promise<PredictionResult>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Prediction timed out'));
-        }, 15000); // 15 second timeout
-        
-        predictionsAPI.getPredictions(coinId, currency)
-          .then(result => {
-            clearTimeout(timeout);
-            resolve(result);
-          })
-          .catch(err => {
-            clearTimeout(timeout);
-            reject(err);
-          });
-      });
-      
-      const result = await fetchWithTimeout;
+      // Get predictions using our frontend model
+      const result = await predictionsAPI.getPredictions(coinId, currency);
       
       // Update state with predictions
       setPredictions(result.predictions);
@@ -144,7 +119,6 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
           <button 
             className="retry-button"
             onClick={fetchPredictions}
-            disabled={tfSupported === false}
           >
             Retry
           </button>
@@ -231,11 +205,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
         </div>
       ) : (
         <div className="prediction-loading">
-          <button 
-            className="get-predictions-button" 
-            onClick={fetchPredictions}
-            disabled={tfSupported === false}
-          >
+          <button className="get-predictions-button" onClick={fetchPredictions}>
             Train Model & Get Predictions
           </button>
         </div>

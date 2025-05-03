@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { Coin, coinGeckoAPI, ChartData } from '../services/api';
 import CoinChart from './CoinChart';
 import PricePrediction from './PricePrediction';
@@ -8,7 +8,11 @@ interface CoinCardProps {
   currency: string;
 }
 
-const CoinCard: React.FC<CoinCardProps> = ({ coin, currency }) => {
+// Using memo to prevent unnecessary rerenders across all cards
+const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
+  // Create a unique ID for this component instance
+  const componentId = useRef(`coin-${coin.id}-${Math.random().toString(36).substring(2, 9)}`);
+  
   const [showChart, setShowChart] = useState(false);
   const [showPrediction, setShowPrediction] = useState(false);
   const [historicalData, setHistoricalData] = useState<ChartData | null>(null);
@@ -28,6 +32,22 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin, currency }) => {
         {isPositive ? '+' : ''}{formatted}%
       </span>
     );
+  };
+
+  // Toggle chart visibility for this card only
+  const toggleChart = () => {
+    // Close prediction if it's open
+    if (showPrediction) setShowPrediction(false);
+    // Toggle chart state
+    setShowChart(prev => !prev);
+  };
+
+  // Toggle prediction visibility for this card only
+  const togglePrediction = () => {
+    // Close chart if it's open
+    if (showChart) setShowChart(false);
+    // Toggle prediction state
+    setShowPrediction(prev => !prev);
   };
 
   // Fetch historical data for predictions and chart when needed
@@ -51,7 +71,7 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin, currency }) => {
   };
   
   return (
-    <div className="coin-card">
+    <div className="coin-card" data-coin-id={coin.id} id={componentId.current}>
       <div className="coin-rank">{coin.market_cap_rank}</div>
       <div className="coin-card-header">
         <div className="coin-image">
@@ -59,7 +79,7 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin, currency }) => {
         </div>
         <div className="coin-info">
           <h2>{coin.name} <span className="coin-symbol">({coin.symbol.toUpperCase()})</span></h2>
-          <div className="coin-price">${coin.current_price.toLocaleString()}</div>
+          <div className="coin-price">{currency.toUpperCase()} {coin.current_price.toLocaleString()}</div>
         </div>
       </div>
       
@@ -84,18 +104,18 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin, currency }) => {
       
       <div className="coin-card-footer">
         <div className="coin-marketcap">
-          Market Cap: ${coin.market_cap.toLocaleString()}
+          Market Cap: {currency.toUpperCase()} {coin.market_cap.toLocaleString()}
         </div>
         <div className="card-buttons">
           <button 
-            className="chart-toggle-button"
-            onClick={() => setShowChart(!showChart)}
+            className={`chart-toggle-button ${showChart ? 'active' : ''}`}
+            onClick={toggleChart}
           >
             {showChart ? 'Hide Chart' : 'Show Chart'}
           </button>
           <button 
-            className="prediction-toggle-button"
-            onClick={() => setShowPrediction(!showPrediction)}
+            className={`prediction-toggle-button ${showPrediction ? 'active' : ''}`}
+            onClick={togglePrediction}
           >
             {showPrediction ? 'Hide AI Prediction' : 'Show AI Prediction'}
           </button>
@@ -119,6 +139,6 @@ const CoinCard: React.FC<CoinCardProps> = ({ coin, currency }) => {
       )}
     </div>
   );
-};
+});
 
 export default CoinCard;

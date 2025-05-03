@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -32,7 +32,6 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<number>(7); // 7 days by default
-  const chartRef = useRef<ChartJS>(null);
 
   useEffect(() => {
     const fetchChartData = async () => {
@@ -100,16 +99,17 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
 
   const prepareChartData = () => {
     if (!chartData || !chartData.prices) return null;
+
+    const gradient = document.createElement('canvas').getContext('2d');
     
-    // Check if prices have data to avoid rendering errors
-    if (chartData.prices.length === 0) {
-      return null;
-    }
+    if (!gradient) return null;
     
-    // Determine if price trend is positive
+    const gradientFill = gradient.createLinearGradient(0, 0, 0, 350);
+    gradientFill.addColorStop(0, 'rgba(22, 199, 132, 0.3)');
+    gradientFill.addColorStop(1, 'rgba(22, 199, 132, 0)');
+
     const isPositive = chartData.prices[0][1] <= chartData.prices[chartData.prices.length - 1][1];
     const lineColor = isPositive ? 'rgb(22, 199, 132)' : 'rgb(234, 57, 67)';
-    const fillColor = isPositive ? 'rgba(22, 199, 132, 0.1)' : 'rgba(234, 57, 67, 0.1)';
     
     return {
       labels: chartData.prices.map(data => formatDate(data[0])),
@@ -118,7 +118,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
           label: `Price (${currency.toUpperCase()})`,
           data: chartData.prices.map(data => data[1]),
           borderColor: lineColor,
-          backgroundColor: fillColor,
+          backgroundColor: gradientFill,
           borderWidth: 2,
           fill: true,
           tension: 0.1,
@@ -168,7 +168,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
         {isLoading && <div className="chart-loading">Loading chart data...</div>}
         {error && <div className="chart-error">{error}</div>}
         {!isLoading && !error && data && (
-          <Line options={chartOptions} data={data} height={80} ref={chartRef} />
+          <Line options={chartOptions} data={data} height={80} />
         )}
       </div>
     </div>
