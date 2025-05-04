@@ -109,7 +109,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
             size: 10,
           },
           callback: function(value: any) {
-            return currency.toUpperCase() + ' ' + value;
+            return value; // Now returning just the value without the currency code
           }
         },
       },
