@@ -119,76 +119,97 @@ function AppContent() {
     window.scrollTo(0, 0);
   };
 
-  // If there's an error but no crash, show error message but keep UI
-  if (hasError && !isLoading) {
-    return (
-      <div className="app-container">
-        <header>
-          <h1>Crypto Price Tracker</h1>
-          <p className="subtitle">Live cryptocurrency prices and market data</p>
-        </header>
-        
-        <div className="error-container">
-          <h2>Error loading data</h2>
-          <p>{error instanceof Error ? error.message : 'Failed to fetch cryptocurrency data'}</p>
-          <button onClick={() => window.location.reload()}>Reload page</button>
-        </div>
-        
-        <footer>
-          <p>Data provided by CoinGecko API</p>
-          <p>© 2025 Crypto Price Tracker</p>
-        </footer>
-      </div>
-    );
-  }
+  // Handle currency change
+  const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCurrency(e.target.value);
+  };
 
   return (
     <div className="app-container">
-      <header>
-        <h1>Crypto Price Tracker</h1>
-        <p className="subtitle">Live cryptocurrency prices and market data</p>
-      </header>
-      
-      <div className="controls">
-        <SearchBar onSearch={handleSearch} />
-        
-        <div className="currency-selector">
-          <label>Currency:</label>
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="usd">USD ($)</option>
-            <option value="eur">EUR (€)</option>
-            <option value="gbp">GBP (£)</option>
-            <option value="jpy">JPY (¥)</option>
-            <option value="btc">BTC (₿)</option>
-          </select>
+      <div className="content-container">
+        <header>
+          <h1>Crypto Price Tracker</h1>
+          <p className="subtitle">
+            Track real-time cryptocurrency prices, view historical charts, and get AI-powered price predictions
+          </p>
+        </header>
+
+        <div className="controls">
+          <SearchBar onSearch={handleSearch} />
+          <div className="currency-selector">
+            <label htmlFor="currency">Currency:</label>
+            <select 
+              id="currency" 
+              value={currency} 
+              onChange={handleCurrencyChange}
+            >
+              <option value="usd">USD</option>
+              <option value="eur">EUR</option>
+              <option value="jpy">JPY</option>
+              <option value="gbp">GBP</option>
+              <option value="btc">BTC</option>
+            </select>
+          </div>
         </div>
+
+        {isLoading ? (
+          <div className="loading">
+            <p>Loading cryptocurrency data...</p>
+          </div>
+        ) : isError ? (
+          <div className="error-message">
+            <p>Error loading data. Please try again later.</p>
+            <p className="error-details">{(error as Error)?.message || 'Unknown error'}</p>
+            <button 
+              className="retry-button"
+              onClick={() => window.location.reload()}
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <>
+            {filteredCoins.length === 0 && !isLoading ? (
+              <div className="no-results">
+                <p>No cryptocurrencies found matching your search.</p>
+                {searchTerm && (
+                  <button 
+                    className="clear-search-button"
+                    onClick={() => setSearchTerm('')}
+                  >
+                    Clear Search
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="coin-list-container">
+                <CoinList coins={filteredCoins} currency={currency} />
+              </div>
+            )}
+            
+            <div className="pagination">
+              <button 
+                className="pagination-button prev"
+                onClick={handlePrevPage}
+                disabled={page <= 1}
+              >
+                Previous
+              </button>
+              <span className="current-page">Page {page}</span>
+              <button 
+                className="pagination-button next"
+                onClick={handleNextPage}
+              >
+                Next
+              </button>
+            </div>
+          </>
+        )}
+
+        <footer>
+          <p>Data provided by CoinGecko API | © {new Date().getFullYear()} Crypto Price Tracker</p>
+        </footer>
       </div>
-      
-      <ErrorBoundary>
-        <CoinList 
-          coins={filteredCoins}
-          isLoading={isLoading}
-          error={error as Error}
-          currency={currency}
-        />
-      </ErrorBoundary>
-      
-      {!isLoading && !isError && coins?.length > 0 && (
-        <div className="pagination">
-          <button onClick={handlePrevPage} disabled={page === 1}>
-            Previous Page
-          </button>
-          <span>Page {page}</span>
-          <button onClick={handleNextPage}>
-            Next Page
-          </button>
-        </div>
-      )}
-      
-      <footer>
-        <p>Data provided by CoinGecko API</p>
-        <p>© 2025 Crypto Price Tracker</p>
-      </footer>
     </div>
   );
 }

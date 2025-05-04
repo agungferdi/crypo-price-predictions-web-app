@@ -99,6 +99,13 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
     return changePercentages[timeFrame].startsWith('+') ? 'positive' : 'negative';
   };
 
+  const getIconForChange = (timeFrame: TimeFrame): string => {
+    if (!changePercentages[timeFrame]) return '';
+    return changePercentages[timeFrame].startsWith('+') 
+      ? '↗' 
+      : '↘';
+  };
+
   return (
     <div className="prediction-container">
       <div className="prediction-header">
@@ -158,6 +165,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
               {formatCurrency(predictions[selectedTimeFrame])}
             </div>
             <div className={`prediction-change-badge ${getChangeClass(selectedTimeFrame)}`}>
+              <span className="change-icon">{getIconForChange(selectedTimeFrame)}</span>
               {changePercentages[selectedTimeFrame]}
             </div>
           </div>

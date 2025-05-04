@@ -58,6 +58,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
 
   const chartOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
         display: false,
@@ -68,12 +69,30 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
             return `${currency.toUpperCase()}: ${context.parsed.y.toFixed(2)}`;
           },
         },
+        padding: 10,
+        titleFont: {
+          size: 12,
+          weight: 'bold',
+        },
+        bodyFont: {
+          size: 12,
+        },
+        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+        titleColor: '#e2e8f0',
+        bodyColor: '#f1f5f9',
+        borderColor: 'rgba(51, 65, 85, 0.5)',
+        borderWidth: 1,
+        displayColors: false,
       },
     },
     scales: {
       x: {
         ticks: {
           maxTicksLimit: 8,
+          color: '#94a3b8',
+          font: {
+            size: 10,
+          },
         },
         grid: {
           display: false,
@@ -82,17 +101,36 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
       y: {
         position: 'right' as const,
         grid: {
-          color: 'rgba(200, 200, 200, 0.2)',
+          color: 'rgba(51, 65, 85, 0.3)',
+        },
+        ticks: {
+          color: '#94a3b8',
+          font: {
+            size: 10,
+          },
+          callback: function(value: any) {
+            return currency.toUpperCase() + ' ' + value;
+          }
         },
       },
     },
     elements: {
       point: {
         radius: 0,
+        hoverRadius: 6,
+        hitRadius: 30,
+      },
+      line: {
+        tension: 0.2,
+        borderWidth: 2,
       },
     },
     interaction: {
       mode: 'index' as const,
+      intersect: false,
+    },
+    hover: {
+      mode: 'index',
       intersect: false,
     },
   };
@@ -105,10 +143,17 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
     if (!gradient) return null;
     
     const gradientFill = gradient.createLinearGradient(0, 0, 0, 350);
-    gradientFill.addColorStop(0, 'rgba(22, 199, 132, 0.3)');
-    gradientFill.addColorStop(1, 'rgba(22, 199, 132, 0)');
-
+    
     const isPositive = chartData.prices[0][1] <= chartData.prices[chartData.prices.length - 1][1];
+    
+    if (isPositive) {
+      gradientFill.addColorStop(0, 'rgba(22, 199, 132, 0.3)');
+      gradientFill.addColorStop(1, 'rgba(22, 199, 132, 0)');
+    } else {
+      gradientFill.addColorStop(0, 'rgba(234, 57, 67, 0.3)');
+      gradientFill.addColorStop(1, 'rgba(234, 57, 67, 0)');
+    }
+
     const lineColor = isPositive ? 'rgb(22, 199, 132)' : 'rgb(234, 57, 67)';
     
     return {
@@ -132,43 +177,61 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
   return (
     <div className="coin-chart-container">
       <div className="chart-timeframes">
-        <button 
-          className={timeRange === 1 ? 'active' : ''} 
-          onClick={() => setTimeRange(1)}
-        >
-          24h
-        </button>
-        <button 
-          className={timeRange === 7 ? 'active' : ''} 
-          onClick={() => setTimeRange(7)}
-        >
-          7d
-        </button>
-        <button 
-          className={timeRange === 30 ? 'active' : ''} 
-          onClick={() => setTimeRange(30)}
-        >
-          30d
-        </button>
-        <button 
-          className={timeRange === 90 ? 'active' : ''} 
-          onClick={() => setTimeRange(90)}
-        >
-          90d
-        </button>
-        <button 
-          className={timeRange === 365 ? 'active' : ''} 
-          onClick={() => setTimeRange(365)}
-        >
-          1y
-        </button>
+        {[
+          { value: 1, label: '24h' },
+          { value: 7, label: '7d' },
+          { value: 30, label: '30d' },
+          { value: 90, label: '90d' },
+          { value: 365, label: '1y' }
+        ].map((period) => (
+          <button 
+            key={period.value}
+            className={timeRange === period.value ? 'active' : ''} 
+            onClick={() => setTimeRange(period.value)}
+          >
+            {period.label}
+          </button>
+        ))}
       </div>
 
       <div className="chart-wrapper">
-        {isLoading && <div className="chart-loading">Loading chart data...</div>}
-        {error && <div className="chart-error">{error}</div>}
+        {isLoading && (
+          <div className="chart-loading">
+            <div className="loading-spinner"></div>
+            <p>Loading chart data...</p>
+          </div>
+        )}
+        
+        {error && (
+          <div className="chart-error">
+            <div className="error-icon-small">⚠️</div>
+            <p>{error}</p>
+            <button 
+              className="retry-button-small"
+              onClick={() => {
+                setChartData(null);
+                const fetchData = async () => {
+                  setIsLoading(true);
+                  try {
+                    const data = await coinGeckoAPI.getCoinChart(coinId, timeRange, currency);
+                    setChartData(data);
+                    setError(null);
+                  } catch (err) {
+                    setError('Failed to load chart data');
+                  } finally {
+                    setIsLoading(false);
+                  }
+                };
+                fetchData();
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        
         {!isLoading && !error && data && (
-          <Line options={chartOptions} data={data} height={80} />
+          <Line options={chartOptions} data={data} height={200} />
         )}
       </div>
     </div>

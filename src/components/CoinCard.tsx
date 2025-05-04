@@ -133,7 +133,7 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
             aria-pressed={showChart}
             aria-label={`${showChart ? 'Hide' : 'Show'} price chart for ${coin.name}`}
           >
-            {showChart ? 'Hide Chart' : 'Show Chart'}
+            {showChart ? 'Hide Chart' : 'Chart'}
           </button>
           <button 
             className={`prediction-toggle-button ${showPrediction ? 'active' : ''}`}
@@ -141,7 +141,7 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
             aria-pressed={showPrediction}
             aria-label={`${showPrediction ? 'Hide' : 'Show'} price prediction for ${coin.name}`}
           >
-            {showPrediction ? 'Hide AI Prediction' : 'Show AI Prediction'}
+            {showPrediction ? 'Hide Prediction' : 'ML Prediction'}
           </button>
         </div>
       </div>
