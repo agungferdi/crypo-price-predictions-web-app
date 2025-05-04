@@ -43,7 +43,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
   const checkTensorflowSupport = async () => {
     try {
       await tf.ready();
-      setModelStatus('TensorFlow.js is ready');
+      setModelStatus('TF.js ready');
     } catch (err) {
       setError('TensorFlow.js is not supported in this browser');
       console.error('TensorFlow.js not supported:', err);
@@ -55,33 +55,30 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
     
     setIsLoading(true);
     setError(null);
-    setModelStatus('Preparing optimized model...');
+    setModelStatus('Initializing...');
     
     try {
-      // Check if browser supports TensorFlow.js
       const isTfAvailable = await predictionsAPI.isApiAvailable();
       
       if (!isTfAvailable) {
-        setError('Your browser does not support TensorFlow.js. Try using a different browser.');
+        setError('Browser does not support TensorFlow.js');
         setIsLoading(false);
         return;
       }
       
-      setModelStatus('Training lightweight model with recent data...');
+      setModelStatus('Training model...');
       
-      // Get predictions using our frontend model
       const result = await predictionsAPI.getPredictions(coinId, currency);
       
-      // Update state with predictions
       setPredictions(result.predictions);
       setConfidence(result.confidence);
       setMetrics(result.metrics);
       setChangePercentages(result.changePercentages);
-      setModelStatus('Prediction complete! Using optimized ML model.');
+      setModelStatus('AI model ready!');
       
     } catch (err) {
       console.error('Error fetching predictions:', err);
-      setError('Failed to generate price predictions');
+      setError('Failed to generate predictions');
     } finally {
       setIsLoading(false);
     }
@@ -104,20 +101,32 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
 
   return (
     <div className="prediction-container">
-      <h3 className="prediction-title">AI Price Predictions</h3>
-      <p className="model-status">{modelStatus}</p>
+      <div className="prediction-header">
+        <div className="prediction-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 2v20h20"></path>
+            <path d="M5 16l3-3 3 3 8-8"></path>
+            <path d="M15 8h4v4"></path>
+          </svg>
+        </div>
+        <h3 className="prediction-title">AI Price Forecast</h3>
+        <span className="model-badge">{modelStatus}</span>
+      </div>
       
       {isLoading ? (
         <div className="training-indicator">
-          <div className="spinner"></div>
-          <p>Training model and generating predictions...</p>
-          <p className="training-note">This may take a few moments as calculations are performed in your browser</p>
+          <div className="ai-pulse-animation"></div>
+          <div className="training-progress">
+            <div className="progress-bar"></div>
+          </div>
+          <p>AI model in training</p>
         </div>
       ) : error ? (
         <div className="prediction-error">
-          {error}
+          <div className="error-icon-small">⚠️</div>
+          <p>{error}</p>
           <button 
-            className="retry-button"
+            className="retry-button-small"
             onClick={fetchPredictions}
           >
             Retry
@@ -125,88 +134,83 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
         </div>
       ) : predictions['1d'] !== null ? (
         <div className="prediction-result">
-          <div className="timeframe-selector">
-            <button 
-              className={selectedTimeFrame === '1d' ? 'active' : ''}
-              onClick={() => setSelectedTimeFrame('1d')}
-            >
-              24h
-            </button>
-            <button 
-              className={selectedTimeFrame === '7d' ? 'active' : ''}
-              onClick={() => setSelectedTimeFrame('7d')}
-            >
-              7d
-            </button>
-            <button 
-              className={selectedTimeFrame === '30d' ? 'active' : ''}
-              onClick={() => setSelectedTimeFrame('30d')}
-            >
-              30d
-            </button>
-            <button 
-              className={selectedTimeFrame === '365d' ? 'active' : ''}
-              onClick={() => setSelectedTimeFrame('365d')}
-            >
-              1y
-            </button>
-            <button 
-              className={selectedTimeFrame === '2y' ? 'active' : ''}
-              onClick={() => setSelectedTimeFrame('2y')}
-            >
-              2y
-            </button>
-            <button 
-              className={selectedTimeFrame === '4y' ? 'active' : ''}
-              onClick={() => setSelectedTimeFrame('4y')}
-            >
-              4y
-            </button>
+          <div className="prediction-timeframes">
+            {['1d', '7d', '30d', '365d'].map((tf) => (
+              <button 
+                key={tf}
+                className={`timeframe-pill ${selectedTimeFrame === tf ? 'active' : ''}`}
+                onClick={() => setSelectedTimeFrame(tf as TimeFrame)}
+              >
+                {tf === '1d' ? '24h' : 
+                 tf === '7d' ? '1W' :
+                 tf === '30d' ? '1M' : '1Y'}
+              </button>
+            ))}
           </div>
           
-          <div className="prediction-value">
-            <span className="prediction-label">
+          <div className="prediction-price-display">
+            <div className="prediction-label">
               {selectedTimeFrame === '1d' ? 'Next 24h:' : 
-               selectedTimeFrame === '7d' ? 'Next 7 days:' :
-               selectedTimeFrame === '30d' ? 'Next 30 days:' :
-               selectedTimeFrame === '365d' ? 'Next year:' :
-               selectedTimeFrame === '2y' ? 'Next 2 years:' : 'Next 4 years:'}
-            </span>
-            <span className="prediction-price">
-              {formatCurrency(predictions[selectedTimeFrame])}
-              <span className={`prediction-change ${getChangeClass(selectedTimeFrame)}`}>
-                {changePercentages[selectedTimeFrame]}
-              </span>
-            </span>
-          </div>
-          
-          <div className="confidence-meter">
-            <div className="confidence-bar" style={{ width: `${confidence}%` }}></div>
-            <div className="confidence-label">{confidence.toFixed(0)}% confidence</div>
-          </div>
-          
-          <div className="prediction-disclaimer">
-            Prediction based on historical patterns only. Not financial advice.
-            <p className="browser-note">All machine learning is performed directly in your browser with TensorFlow.js</p>
-          </div>
-          
-          {metrics && (
-            <div className="model-metrics">
-              <details>
-                <summary>Model Details</summary>
-                <div className="metrics-content">
-                  <p>Mean Square Error: {metrics.mse.toFixed(4)}</p>
-                  <p>Mean Absolute Error: {metrics.mae.toFixed(4)}</p>
-                  <p>Root Mean Square Error: {metrics.rmse.toFixed(4)}</p>
-                </div>
-              </details>
+               selectedTimeFrame === '7d' ? 'Next Week:' :
+               selectedTimeFrame === '30d' ? 'Next Month:' : 'Next Year:'}
             </div>
-          )}
+            <div className="prediction-price">
+              {formatCurrency(predictions[selectedTimeFrame])}
+            </div>
+            <div className={`prediction-change-badge ${getChangeClass(selectedTimeFrame)}`}>
+              {changePercentages[selectedTimeFrame]}
+            </div>
+          </div>
+          
+          <div className="confidence-wrapper">
+            <div className="confidence-meter">
+              <div className="confidence-bar" style={{ width: `${confidence}%` }}></div>
+            </div>
+            <div className="confidence-value">{confidence.toFixed(0)}% confidence</div>
+          </div>
+          
+          <div className="prediction-footer">
+            <div className="prediction-info-toggle" onClick={() => document.getElementById(`metrics-${coinId}`)?.classList.toggle('visible')}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 8v4M12 16h.01"></path>
+              </svg>
+              <span>AI model info</span>
+            </div>
+            
+            <div id={`metrics-${coinId}`} className="metrics-popup">
+              <div className="metrics-header">
+                <h4>AI Model Details</h4>
+                <div className="metrics-close" onClick={() => document.getElementById(`metrics-${coinId}`)?.classList.remove('visible')}>✕</div>
+              </div>
+              <div className="metrics-content">
+                <div className="metric-item">
+                  <span>Model Type:</span>
+                  <span>Regression ML</span>
+                </div>
+                {metrics && (
+                  <>
+                    <div className="metric-item">
+                      <span>Mean Abs. Error:</span>
+                      <span>{metrics.mae.toFixed(4)}</span>
+                    </div>
+                    <div className="metric-item">
+                      <span>Root Mean Sq. Error:</span>
+                      <span>{metrics.rmse.toFixed(4)}</span>
+                    </div>
+                  </>
+                )}
+                <div className="metrics-note">
+                  Predictions based on historical patterns only. Not financial advice.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="prediction-loading">
           <button className="get-predictions-button" onClick={fetchPredictions}>
-            Train Model & Get Predictions
+            Generate AI Prediction
           </button>
         </div>
       )}

@@ -17,6 +17,7 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
   const [showPrediction, setShowPrediction] = useState(false);
   const [historicalData, setHistoricalData] = useState<ChartData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [hasAnimated, setHasAnimated] = useState(false);
 
   // Format price changes with proper coloring
   const formatPriceChange = (changePercentage: number | undefined | null) => {
@@ -34,12 +35,30 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
     );
   };
 
+  // Format currency value with proper symbol
+  const formatCurrency = (value: number) => {
+    const formatter = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+      notation: value > 1000000 ? 'compact' : 'standard',
+      maximumFractionDigits: value < 1 ? 6 : 2,
+    });
+    
+    // Handle BTC and other crypto currencies that don't have standard formats
+    if (currency === 'btc') {
+      return `₿ ${value.toLocaleString(undefined, { maximumFractionDigits: 8 })}`;
+    }
+    
+    return formatter.format(value);
+  };
+
   // Toggle chart visibility for this card only
   const toggleChart = () => {
     // Close prediction if it's open
     if (showPrediction) setShowPrediction(false);
     // Toggle chart state
     setShowChart(prev => !prev);
+    if (!hasAnimated) setHasAnimated(true);
   };
 
   // Toggle prediction visibility for this card only
@@ -48,6 +67,7 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
     if (showChart) setShowChart(false);
     // Toggle prediction state
     setShowPrediction(prev => !prev);
+    if (!hasAnimated) setHasAnimated(true);
   };
 
   // Fetch historical data for predictions and chart when needed
@@ -71,15 +91,15 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
   };
   
   return (
-    <div className="coin-card" data-coin-id={coin.id} id={componentId.current}>
+    <div className={`coin-card ${hasAnimated ? 'has-expanded' : ''}`} data-coin-id={coin.id} id={componentId.current}>
       <div className="coin-rank">{coin.market_cap_rank}</div>
       <div className="coin-card-header">
         <div className="coin-image">
-          <img src={coin.image} alt={coin.name} />
+          <img src={coin.image} alt={coin.name} loading="lazy" />
         </div>
         <div className="coin-info">
-          <h2>{coin.name} <span className="coin-symbol">({coin.symbol.toUpperCase()})</span></h2>
-          <div className="coin-price">{currency.toUpperCase()} {coin.current_price.toLocaleString()}</div>
+          <h2>{coin.name} <span className="coin-symbol">{coin.symbol.toUpperCase()}</span></h2>
+          <div className="coin-price">{formatCurrency(coin.current_price)}</div>
         </div>
       </div>
       
@@ -104,18 +124,22 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
       
       <div className="coin-card-footer">
         <div className="coin-marketcap">
-          Market Cap: {currency.toUpperCase()} {coin.market_cap.toLocaleString()}
+          Market Cap: {formatCurrency(coin.market_cap)}
         </div>
         <div className="card-buttons">
           <button 
             className={`chart-toggle-button ${showChart ? 'active' : ''}`}
             onClick={toggleChart}
+            aria-pressed={showChart}
+            aria-label={`${showChart ? 'Hide' : 'Show'} price chart for ${coin.name}`}
           >
             {showChart ? 'Hide Chart' : 'Show Chart'}
           </button>
           <button 
             className={`prediction-toggle-button ${showPrediction ? 'active' : ''}`}
             onClick={togglePrediction}
+            aria-pressed={showPrediction}
+            aria-label={`${showPrediction ? 'Hide' : 'Show'} price prediction for ${coin.name}`}
           >
             {showPrediction ? 'Hide AI Prediction' : 'Show AI Prediction'}
           </button>
