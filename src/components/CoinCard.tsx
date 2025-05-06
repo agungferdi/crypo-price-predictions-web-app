@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
 import { Coin, coinGeckoAPI, ChartData } from '../services/api';
 import CoinChart from './CoinChart';
-import PricePrediction from './PricePrediction';
+import PriceForecast from './PriceForecast';
 
 interface CoinCardProps {
   coin: Coin;
@@ -14,7 +14,7 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
   const componentId = useRef(`coin-${coin.id}-${Math.random().toString(36).substring(2, 9)}`);
   
   const [showChart, setShowChart] = useState(false);
-  const [showPrediction, setShowPrediction] = useState(false);
+  const [showForecast, setShowForecast] = useState(false);
   const [historicalData, setHistoricalData] = useState<ChartData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [hasAnimated, setHasAnimated] = useState(false);
@@ -54,33 +54,33 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
 
   // Toggle chart visibility for this card only
   const toggleChart = () => {
-    // Close prediction if it's open
-    if (showPrediction) setShowPrediction(false);
+    // Close forecast if it's open
+    if (showForecast) setShowForecast(false);
     // Toggle chart state
     setShowChart(prev => !prev);
     if (!hasAnimated) setHasAnimated(true);
   };
 
-  // Toggle prediction visibility for this card only
-  const togglePrediction = () => {
+  // Toggle forecast visibility for this card only
+  const toggleForecast = () => {
     // Close chart if it's open
     if (showChart) setShowChart(false);
-    // Toggle prediction state
-    setShowPrediction(prev => !prev);
+    // Toggle forecast state
+    setShowForecast(prev => !prev);
     if (!hasAnimated) setHasAnimated(true);
   };
 
-  // Fetch historical data for predictions and chart when needed
+  // Fetch historical data for forecasts and chart when needed
   useEffect(() => {
-    if ((showChart || showPrediction) && !historicalData && !isLoadingData) {
+    if ((showChart || showForecast) && !historicalData && !isLoadingData) {
       fetchHistoricalData();
     }
-  }, [showChart, showPrediction]);
+  }, [showChart, showForecast]);
 
   const fetchHistoricalData = async () => {
     setIsLoadingData(true);
     try {
-      // Fetch 30 days of historical data for better prediction
+      // Fetch 30 days of historical data for better forecast
       const data = await coinGeckoAPI.getCoinChart(coin.id, 30, currency);
       setHistoricalData(data);
     } catch (error) {
@@ -136,12 +136,12 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
             {showChart ? 'Hide Chart' : 'Chart'}
           </button>
           <button 
-            className={`prediction-toggle-button ${showPrediction ? 'active' : ''}`}
-            onClick={togglePrediction}
-            aria-pressed={showPrediction}
-            aria-label={`${showPrediction ? 'Hide' : 'Show'} price prediction for ${coin.name}`}
+            className={`prediction-toggle-button ${showForecast ? 'active' : ''}`}
+            onClick={toggleForecast}
+            aria-pressed={showForecast}
+            aria-label={`${showForecast ? 'Hide' : 'Show'} price forecast for ${coin.name}`}
           >
-            {showPrediction ? 'Hide Prediction' : 'ML Prediction'}
+            {showForecast ? 'Hide Forecast' : 'ML Forecast'}
           </button>
         </div>
       </div>
@@ -152,9 +152,9 @@ const CoinCard: React.FC<CoinCardProps> = memo(({ coin, currency }) => {
         </div>
       )}
 
-      {showPrediction && (
-        <div className="coin-prediction">
-          <PricePrediction 
+      {showForecast && (
+        <div className="coin-forecast">
+          <PriceForecast 
             coinId={coin.id} 
             historicalData={historicalData}
             currency={currency} 

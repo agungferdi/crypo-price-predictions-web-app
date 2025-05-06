@@ -5,14 +5,14 @@ import * as tf from '@tensorflow/tfjs';
 
 export type TimeFrame = '1d' | '7d' | '30d' | '365d' | '2y' | '4y';
 
-interface PricePredictionProps {
+interface PriceForecastProps {
   coinId: string;
   historicalData: ChartData | null;
   currency: string;
 }
 
-const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalData, currency }) => {
-  const [predictions, setPredictions] = useState<Record<TimeFrame, number | null>>({
+const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, historicalData, currency }) => {
+  const [forecasts, setForecasts] = useState<Record<TimeFrame, number | null>>({
     '1d': null,
     '7d': null,
     '30d': null,
@@ -42,7 +42,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
 
   useEffect(() => {
     if (coinId) {
-      fetchPredictions();
+      fetchForecasts();
     }
   }, [coinId, currency]);
 
@@ -56,7 +56,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
     }
   };
 
-  const fetchPredictions = async () => {
+  const fetchForecasts = async () => {
     if (!coinId) return;
     
     setIsLoading(true);
@@ -80,7 +80,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
       
       // Setup progress callback function
       const progressCallback = (step: string, epoch: number, totalEpochs: number, logs?: any) => {
-        // Calculate overall progress (data loading: 10%, model setup: 10%, training: 60%, prediction: 20%)
+        // Calculate overall progress (data loading: 10%, model setup: 10%, training: 60%, forecast: 20%)
         let progress = 0;
         
         if (step === 'loading') {
@@ -96,7 +96,7 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
           setProcessingStep(`Training epoch ${epoch}/${totalEpochs}`);
         } else if (step === 'predicting') {
           progress = 80 + 20 * (epoch / totalEpochs); // 80-100%
-          setProcessingStep('Generating predictions');
+          setProcessingStep('Generating forecasts');
         }
         
         setTrainingProgress(Math.min(Math.round(progress), 99)); // Cap at 99% until complete
@@ -108,15 +108,15 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
       setTrainingProgress(100);
       setProcessingStep('Complete');
       
-      setPredictions(result.predictions);
+      setForecasts(result.predictions);
       setConfidence(result.confidence);
       setMetrics(result.metrics);
       setChangePercentages(result.changePercentages);
-      setModelStatus('AI model ready!');
+      setModelStatus('ML model ready!');
       
     } catch (err) {
-      console.error('Error fetching predictions:', err);
-      setError('Failed to generate predictions');
+      console.error('Error fetching forecasts:', err);
+      setError('Failed to generate forecasts');
     } finally {
       setIsLoading(false);
     }
@@ -145,16 +145,16 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
   };
 
   return (
-    <div className="prediction-container">
-      <div className="prediction-header">
-        <div className="prediction-icon">
+    <div className="forecast-container">
+      <div className="forecast-header">
+        <div className="forecast-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M2 2v20h20"></path>
             <path d="M5 16l3-3 3 3 8-8"></path>
             <path d="M15 8h4v4"></path>
           </svg>
         </div>
-        <h3 className="prediction-title">AI Price Forecast</h3>
+        <h3 className="forecast-title">ML Price Forecast</h3>
         <span className="model-badge">{modelStatus}</span>
       </div>
       
@@ -183,19 +183,19 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
           )}
         </div>
       ) : error ? (
-        <div className="prediction-error">
+        <div className="forecast-error">
           <div className="error-icon-small">⚠️</div>
           <p>{error}</p>
           <button 
             className="retry-button-small"
-            onClick={fetchPredictions}
+            onClick={fetchForecasts}
           >
             Retry
           </button>
         </div>
-      ) : predictions['1d'] !== null ? (
-        <div className="prediction-result">
-          <div className="prediction-timeframes">
+      ) : forecasts['1d'] !== null ? (
+        <div className="forecast-result">
+          <div className="forecast-timeframes">
             {['1d', '7d', '30d', '365d'].map((tf) => (
               <button 
                 key={tf}
@@ -209,16 +209,16 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
             ))}
           </div>
           
-          <div className="prediction-price-display">
-            <div className="prediction-label">
+          <div className="forecast-price-display">
+            <div className="forecast-label">
               {selectedTimeFrame === '1d' ? 'Next 24h:' : 
                selectedTimeFrame === '7d' ? 'Next Week:' :
                selectedTimeFrame === '30d' ? 'Next Month:' : 'Next Year:'}
             </div>
-            <div className="prediction-price">
-              {formatCurrency(predictions[selectedTimeFrame])}
+            <div className="forecast-price">
+              {formatCurrency(forecasts[selectedTimeFrame])}
             </div>
-            <div className={`prediction-change-badge ${getChangeClass(selectedTimeFrame)}`}>
+            <div className={`forecast-change-badge ${getChangeClass(selectedTimeFrame)}`}>
               <span className="change-icon">{getIconForChange(selectedTimeFrame)}</span>
               {changePercentages[selectedTimeFrame]}
             </div>
@@ -231,18 +231,18 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
             <div className="confidence-value">{confidence.toFixed(0)}% confidence</div>
           </div>
           
-          <div className="prediction-footer">
-            <div className="prediction-info-toggle" onClick={() => document.getElementById(`metrics-${coinId}`)?.classList.toggle('visible')}>
+          <div className="forecast-footer">
+            <div className="forecast-info-toggle" onClick={() => document.getElementById(`metrics-${coinId}`)?.classList.toggle('visible')}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10"></circle>
                 <path d="M12 8v4M12 16h.01"></path>
               </svg>
-              <span>AI model info</span>
+              <span>ML model info</span>
             </div>
             
             <div id={`metrics-${coinId}`} className="metrics-popup">
               <div className="metrics-header">
-                <h4>AI Model Details</h4>
+                <h4>ML Model Details</h4>
                 <div className="metrics-close" onClick={() => document.getElementById(`metrics-${coinId}`)?.classList.remove('visible')}>✕</div>
               </div>
               <div className="metrics-content">
@@ -263,16 +263,16 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
                   </>
                 )}
                 <div className="metrics-note">
-                  Predictions based on historical patterns only. Not financial advice.
+                  Forecasts based on historical patterns only. Not financial advice.
                 </div>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="prediction-loading">
-          <button className="get-predictions-button" onClick={fetchPredictions}>
-            Generate AI Prediction
+        <div className="forecast-loading">
+          <button className="get-forecasts-button" onClick={fetchForecasts}>
+            Generate ML Forecast
           </button>
         </div>
       )}
@@ -280,4 +280,4 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
   );
 };
 
-export default PricePrediction;
+export default PriceForecast;
