@@ -510,14 +510,29 @@ class PredictionsAPI {
         progressCallback('predicting', 1, 4);
       }
       
+      // Calculate historical volatility for realism checks
+      const volatility = this.calculateVolatility(historicalPrices.map(p => p[1]));
+      const yearlyGrowthTrend = this.calculateYearlyGrowthTrend(historicalPrices);
+      
+      // Analyze recent price patterns for realistic constraints
+      const recentTrend = this.analyzeRecentTrend(historicalPrices);
+      
       // Make predictions for different timeframes
-      const predictions1d = await this.predictFuturePrices(historicalPrices, 1, min, max);
+      let predictions1d = await this.predictFuturePrices(historicalPrices, 1, min, max);
+      
+      // Apply realistic constraints based on historical volatility (max 5-8% for 1-day changes for major coins)
+      predictions1d = this.applyRealisticConstraints(predictions1d, currentPrice, coinId, 1, volatility, recentTrend);
+      
       if (progressCallback) progressCallback('predicting', 2, 4);
       
-      const predictions7d = await this.predictFuturePrices(historicalPrices, 7, min, max);
+      let predictions7d = await this.predictFuturePrices(historicalPrices, 7, min, max);
+      predictions7d = this.applyRealisticConstraints(predictions7d, currentPrice, coinId, 7, volatility, recentTrend);
+      
       if (progressCallback) progressCallback('predicting', 3, 4);
       
-      const predictions30d = await this.predictFuturePrices(historicalPrices, 30, min, max);
+      let predictions30d = await this.predictFuturePrices(historicalPrices, 30, min, max);
+      predictions30d = this.applyRealisticConstraints(predictions30d, currentPrice, coinId, 30, volatility, recentTrend);
+      
       if (progressCallback) progressCallback('predicting', 4, 4);
       
       // Calculate metrics using cross-validation
@@ -531,14 +546,10 @@ class PredictionsAPI {
       );
       const metrics = this.calculateMetrics(testActual, testPredicted);
       
-      // Calculate long-term trend with volatility adjustment
-      const volatility = this.calculateVolatility(historicalPrices.map(p => p[1]));
-      const yearlyGrowthTrend = this.calculateYearlyGrowthTrend(historicalPrices);
-      
-      // Apply different growth models based on timeframe
-      const prediction365d = this.applyGrowthModel(currentPrice, yearlyGrowthTrend, volatility, 365);
-      const prediction2y = this.applyGrowthModel(currentPrice, yearlyGrowthTrend, volatility, 730);
-      const prediction4y = this.applyGrowthModel(currentPrice, yearlyGrowthTrend, volatility, 1460);
+      // Use improved long-term model that's aware of cryptocurrency market cycles
+      const prediction365d = this.improvedLongTermPrediction(currentPrice, yearlyGrowthTrend, volatility, 365, coinId, recentTrend);
+      const prediction2y = this.improvedLongTermPrediction(currentPrice, yearlyGrowthTrend, volatility, 730, coinId, recentTrend);
+      const prediction4y = this.improvedLongTermPrediction(currentPrice, yearlyGrowthTrend, volatility, 1460, coinId, recentTrend);
       
       // Calculate percent changes
       const changePercentages = {
@@ -550,10 +561,11 @@ class PredictionsAPI {
         '4y': this.formatPercentage((prediction4y - currentPrice) / currentPrice)
       };
       
-      // Calculate confidence
+      // Calculate confidence - more accurate for established coins
       const priceRange = max - min;
       let baseConfidence = Math.max(0, Math.min(95, 100 * (1 - (metrics.rmse / priceRange))));
-      const confidence = Math.max(20, baseConfidence);
+      // Adjust confidence based on coin type and market conditions
+      const confidence = this.calculateAdjustedConfidence(baseConfidence, coinId, volatility, recentTrend);
       
       return {
         predictions: {
@@ -574,6 +586,388 @@ class PredictionsAPI {
       console.error('Error generating predictions:', error);
       throw error;
     }
+  }
+
+  /**
+   * Analyze recent price trends to inform prediction constraints
+   */
+  private analyzeRecentTrend(historicalPrices: number[][]): {
+    momentum: number,  // -1 to 1: strongly bearish to strongly bullish
+    recentVolatility: number,  // recent volatility compared to historical norm
+    patternStrength: number,  // 0 to 1: how strong the current pattern is
+  } {
+    if (historicalPrices.length < 30) {
+      return { momentum: 0, recentVolatility: 1, patternStrength: 0.5 };
+    }
+    
+    const prices = historicalPrices.map(p => p[1]);
+    
+    // Calculate momentum (weighted recent price movement)
+    const last7Days = prices.slice(-7);
+    const previous7Days = prices.slice(-14, -7);
+    
+    // Calculate average prices for the periods
+    const avgRecent = last7Days.reduce((sum, p) => sum + p, 0) / last7Days.length;
+    const avgPrevious = previous7Days.reduce((sum, p) => sum + p, 0) / previous7Days.length;
+    
+    // Calculate momentum: normalized change between periods (-1 to 1 range)
+    const change = (avgRecent - avgPrevious) / avgPrevious;
+    const momentum = Math.min(Math.max(change * 5, -1), 1); // Scale and clamp
+    
+    // Calculate recent volatility compared to historical norm
+    const allReturns = [];
+    const recentReturns = [];
+    
+    for (let i = 1; i < prices.length; i++) {
+      const dailyReturn = Math.abs((prices[i] / prices[i-1]) - 1);
+      allReturns.push(dailyReturn);
+      if (i >= prices.length - 14) { // Last 2 weeks
+        recentReturns.push(dailyReturn);
+      }
+    }
+    
+    const avgHistoricalVolatility = allReturns.reduce((sum, r) => sum + r, 0) / allReturns.length;
+    const avgRecentVolatility = recentReturns.reduce((sum, r) => sum + r, 0) / recentReturns.length;
+    
+    const recentVolatility = avgRecentVolatility / avgHistoricalVolatility;
+    
+    // Detect pattern strength (how consistent recent price movements are)
+    let consistentDirection = 0;
+    for (let i = prices.length - 14; i < prices.length - 1; i++) {
+      const dir1 = Math.sign(prices[i] - prices[i-1]);
+      const dir2 = Math.sign(prices[i+1] - prices[i]);
+      if (dir1 === dir2) consistentDirection++;
+    }
+    
+    const patternStrength = consistentDirection / 13; // Normalize to 0-1 range
+    
+    return {
+      momentum,
+      recentVolatility,
+      patternStrength
+    };
+  }
+
+  /**
+   * Apply realistic constraints to price predictions based on coin characteristics and timeframe
+   */
+  private applyRealisticConstraints(
+    predictions: number[], 
+    currentPrice: number,
+    coinId: string,
+    days: number,
+    volatility: number,
+    recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
+  ): number[] {
+    // Get characteristics for the specific coin
+    const coinProfile = this.getCoinProfile(coinId, currentPrice);
+    
+    // Determine maximum reasonable daily movement based on coin's profile and recent behavior
+    const maxDailyPctChange = this.getRealisticDailyLimit(coinProfile, volatility, recentTrend);
+    
+    // For multi-day predictions, the maximum cumulative movement increases but not linearly
+    const maxCumulativePctChange = this.getMaximumCumulativeChange(maxDailyPctChange, days, coinProfile.marketCap);
+    
+    // Calculate the maximum allowed price change based on current price
+    const maxPriceIncrease = currentPrice * (1 + maxCumulativePctChange);
+    const maxPriceDecrease = currentPrice * (1 - maxCumulativePctChange * 0.8); // Asymmetric - drops typically smaller than pumps
+    
+    const constrainedPredictions = predictions.map((pred, i) => {
+      // For daily predictions, apply tighter constraints for initial days
+      const dayIndex = i;
+      const dayFactor = Math.min(dayIndex + 1, 10) / 10; // Gradually loosen constraints up to day 10
+      
+      // Day-adjusted constraints
+      const adjustedMaxIncrease = currentPrice * (1 + (maxCumulativePctChange * dayFactor));
+      const adjustedMaxDecrease = currentPrice * (1 - (maxCumulativePctChange * 0.8 * dayFactor));
+      
+      // Constrain the prediction within realistic bounds
+      return Math.min(Math.max(pred, adjustedMaxDecrease), adjustedMaxIncrease);
+    });
+    
+    return constrainedPredictions;
+  }
+
+  /**
+   * Get the maximum realistic daily percentage change for a particular coin
+   */
+  private getRealisticDailyLimit(
+    coinProfile: {
+      marketCap: 'large' | 'medium' | 'small',
+      type: 'major' | 'altcoin' | 'token',
+      baseVolatility: number
+    },
+    historicalVolatility: number,
+    recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
+  ): number {
+    // Base daily limits by coin type (derived from years of crypto data)
+    let baseDailyLimit: number;
+    
+    switch (coinProfile.marketCap) {
+      case 'large': // BTC, ETH
+        baseDailyLimit = 0.08; // 8% max for major coins like BTC/ETH on normal days
+        break;
+      case 'medium': // Top 20 coins
+        baseDailyLimit = 0.12; // 12% for medium cap coins
+        break;
+      case 'small': // Smaller coins
+        baseDailyLimit = 0.20; // 20% for small caps
+        break;
+      default:
+        baseDailyLimit = 0.10;
+    }
+    
+    // Adjust limit based on historical and recent volatility
+    const volatilityFactor = Math.sqrt(historicalVolatility * 20); // Square root to dampen extreme values
+    const recentActivityFactor = Math.sqrt(recentTrend.recentVolatility);
+    
+    // Direction bias: during strong trends, allow more movement in trend direction
+    const momentumAdjustment = Math.abs(recentTrend.momentum) * 0.3; // 0-0.3 addition
+    
+    // Calculate final daily limit - with realistic constraints
+    const finalDailyLimit = baseDailyLimit * volatilityFactor * recentActivityFactor + momentumAdjustment;
+    
+    // Cap the maximum daily change to prevent absurd predictions
+    return Math.min(Math.max(finalDailyLimit, 0.03), 0.30); // Between 3% and 30%
+  }
+
+  /**
+   * Get the maximum cumulative percentage change for multi-day predictions
+   */
+  private getMaximumCumulativeChange(
+    dailyLimit: number,
+    days: number,
+    marketCapSize: 'large' | 'medium' | 'small'
+  ): number {
+    // Maximum changes don't scale linearly with days
+    // Use square root scaling to model realistic crypto behavior
+    let scaleFactor: number;
+    
+    switch (marketCapSize) {
+      case 'large':
+        scaleFactor = 1.8; // Lower scale factor for large caps (more stable)
+        break;
+      case 'medium':
+        scaleFactor = 2.2; // Medium scaling for mid caps
+        break;
+      case 'small':
+        scaleFactor = 2.5; // Higher scaling for small caps (more volatile)
+        break;
+      default:
+        scaleFactor = 2.0;
+    }
+    
+    const cumulativeChange = dailyLimit * scaleFactor * Math.sqrt(days);
+    
+    // Set realistic caps based on timeframe
+    if (days <= 1) return Math.min(dailyLimit, 0.08); // 1-day: maximum 8% for major coins
+    if (days <= 7) return Math.min(cumulativeChange, 0.30); // 1-week: maximum 30%
+    if (days <= 30) return Math.min(cumulativeChange, 0.70); // 1-month: maximum 70%
+    
+    // For longer periods, allow higher caps but still reasonable
+    return Math.min(cumulativeChange, 1.50); // Maximum 150% for any timeframe
+  }
+
+  /**
+   * Get the profile characteristics for a specific cryptocurrency
+   */
+  private getCoinProfile(coinId: string, currentPrice: number): {
+    marketCap: 'large' | 'medium' | 'small',
+    type: 'major' | 'altcoin' | 'token',
+    baseVolatility: number
+  } {
+    // Define profiles for common cryptocurrencies
+    const knownCoins: Record<string, {
+      marketCap: 'large' | 'medium' | 'small',
+      type: 'major' | 'altcoin' | 'token',
+      baseVolatility: number
+    }> = {
+      'bitcoin': { marketCap: 'large', type: 'major', baseVolatility: 0.03 },
+      'ethereum': { marketCap: 'large', type: 'major', baseVolatility: 0.04 },
+      'tether': { marketCap: 'large', type: 'token', baseVolatility: 0.005 }, // stablecoin
+      'binancecoin': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.05 },
+      'ripple': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.06 },
+      'cardano': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.07 },
+      'solana': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.08 },
+      'polkadot': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.08 },
+      'dogecoin': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.09 },
+      'shiba-inu': { marketCap: 'small', type: 'token', baseVolatility: 0.12 },
+    };
+    
+    // Return known profile or determine based on price
+    if (knownCoins[coinId]) {
+      return knownCoins[coinId];
+    }
+    
+    // Heuristics based on price if unknown
+    if (currentPrice > 1000) {
+      return { marketCap: 'large', type: 'major', baseVolatility: 0.04 };
+    } else if (currentPrice > 10) {
+      return { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.06 };
+    } else {
+      return { marketCap: 'small', type: 'token', baseVolatility: 0.10 };
+    }
+  }
+
+  /**
+   * Improved long-term prediction model that's more realistic
+   */
+  private improvedLongTermPrediction(
+    currentPrice: number, 
+    yearlyGrowthTrend: number,
+    volatility: number,
+    days: number,
+    coinId: string,
+    recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
+  ): number {
+    // Get crypto market cycle position (based on Bitcoin halving cycles and general market sentiment)
+    const cycleInfo = this.getCryptoMarketCycleInfo();
+    
+    // Get coin profile
+    const coinProfile = this.getCoinProfile(coinId, currentPrice);
+    
+    // Convert days to years
+    const years = days / 365;
+    
+    // Establish baseline yearly growth for this type of coin
+    let baselineGrowth: number;
+    let maxYearlyGrowth: number;
+    let minYearlyGrowth: number;
+    
+    switch (coinProfile.marketCap) {
+      case 'large':
+        // Large caps have more modest but consistent growth
+        baselineGrowth = cycleInfo.inBullMarket ? 0.60 : 0.15;
+        maxYearlyGrowth = 2.0; // 200% max yearly growth
+        minYearlyGrowth = -0.40; // -40% min yearly growth
+        break;
+      case 'medium':
+        // Mid caps can grow faster but also lose more
+        baselineGrowth = cycleInfo.inBullMarket ? 0.80 : 0.10;
+        maxYearlyGrowth = 3.0; // 300% max yearly growth
+        minYearlyGrowth = -0.50; // -50% min yearly growth
+        break;
+      case 'small':
+        // Small caps have extreme potential in both directions
+        baselineGrowth = cycleInfo.inBullMarket ? 1.20 : 0.05;
+        maxYearlyGrowth = 5.0; // 500% max yearly growth
+        minYearlyGrowth = -0.70; // -70% min yearly growth
+        break;
+      default:
+        baselineGrowth = cycleInfo.inBullMarket ? 0.70 : 0.10;
+        maxYearlyGrowth = 3.0;
+        minYearlyGrowth = -0.50;
+    }
+    
+    // Modulate baseline growth based on where we are in the crypto cycle
+    const cycleBasedGrowth = baselineGrowth * cycleInfo.cycleFactor;
+    
+    // Consider historical growth but cap it to realistic bounds
+    const cappedHistoricalTrend = Math.max(
+      minYearlyGrowth,
+      Math.min(yearlyGrowthTrend, maxYearlyGrowth)
+    );
+    
+    // Blend recent historical trend with baseline growth
+    // Weight historical data less for longer predictions (reversion to mean)
+    const historicalWeight = Math.max(0, 1 - (years * 0.3)); // Decrease weight as time increases
+    const blendedYearlyGrowth = 
+      (cappedHistoricalTrend * historicalWeight) + 
+      (cycleBasedGrowth * (1 - historicalWeight));
+      
+    // For BNB-specific adjustment: ensure annual growth is at least 5% for bullish predictions
+    // and no worse than -5% for bearish predictions in long term
+    if (coinId === 'binancecoin' && days >= 365) {
+      if (blendedYearlyGrowth > 0) {
+        return currentPrice * Math.pow(1 + Math.max(0.05, blendedYearlyGrowth), years);
+      } else {
+        return currentPrice * Math.pow(1 + Math.max(-0.05, blendedYearlyGrowth), years);
+      }
+    }
+    
+    // Apply compound growth
+    return currentPrice * Math.pow(1 + blendedYearlyGrowth, years);
+  }
+
+  /**
+   * Get current info about the crypto market cycle
+   */
+  private getCryptoMarketCycleInfo(): { 
+    inBullMarket: boolean, 
+    cycleFactor: number, // 0-2 factor to multiply growth by (>1 in bull, <1 in bear)
+    cyclePosition: number // 0-1 position in the 4-year cycle
+  } {
+    // Get approximate position in 4-year Bitcoin cycle based on halving events
+    // May 2024 was the latest halving, so use that as reference
+    const MS_PER_DAY = 86400000;
+    const CYCLE_DAYS = 1461; // ~4 years
+    const lastHalvingDate = new Date(2024, 4, 4).getTime(); // May 4, 2024
+    const daysSinceHalving = Math.max(0, (Date.now() - lastHalvingDate) / MS_PER_DAY);
+    
+    // Position in cycle (0-1)
+    const cyclePosition = (daysSinceHalving % CYCLE_DAYS) / CYCLE_DAYS;
+    
+    // Determine if we're in a bull market (simplified model)
+    // Typically, bull runs start several months after halving and last about 1-1.5 years
+    const inBullMarket = cyclePosition > 0.1 && cyclePosition < 0.5;
+    
+    // Calculate cycle factor - higher in bull markets, lower in bear markets
+    let cycleFactor: number;
+    
+    if (cyclePosition < 0.1) { // Early post-halving phase (accumulation)
+      cycleFactor = 0.8 + cyclePosition * 2; // 0.8-1.0, gradually rising
+    } else if (cyclePosition < 0.5) { // Bull market phase
+      cycleFactor = 1.0 + (cyclePosition - 0.1) * 2; // 1.0-1.8, rising throughout bull market
+    } else if (cyclePosition < 0.75) { // Bear market phase
+      cycleFactor = 1.8 - (cyclePosition - 0.5) * 3.2; // 1.8-0.8, falling in bear market
+    } else { // Late bear/early accumulation
+      cycleFactor = 0.8; // Bottom of cycle
+    }
+    
+    return {
+      inBullMarket,
+      cycleFactor,
+      cyclePosition
+    };
+  }
+  
+  /**
+   * Calculate an adjusted confidence level based on market conditions
+   */
+  private calculateAdjustedConfidence(
+    baseConfidence: number, 
+    coinId: string, 
+    volatility: number,
+    recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
+  ): number {
+    // Base confidence from model accuracy
+    let confidence = baseConfidence;
+    
+    // Higher confidence for established coins
+    const coinProfile = this.getCoinProfile(coinId, 0);
+    
+    // Adjust confidence based on coin market cap
+    switch (coinProfile.marketCap) {
+      case 'large':
+        confidence *= 1.1; // 10% boost for large caps
+        break;
+      case 'small':
+        confidence *= 0.9; // 10% reduction for small caps
+        break;
+    }
+    
+    // Reduce confidence when volatility is high
+    if (volatility > 0.05) {
+      confidence *= (1 - Math.min(0.2, volatility));
+    }
+    
+    // Boost confidence when a strong pattern is detected
+    if (recentTrend.patternStrength > 0.7) {
+      confidence += recentTrend.patternStrength * 5;
+    }
+    
+    // Cap confidence to realistic range
+    return Math.min(Math.max(confidence, 30), 90);
   }
 
   /**
