@@ -27,6 +27,12 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
   const [metrics, setMetrics] = useState<ModelMetrics | null>(null);
   const [changePercentages, setChangePercentages] = useState<Record<TimeFrame, string>>({} as Record<TimeFrame, string>);
   const [modelStatus, setModelStatus] = useState<string>('');
+  
+  // New states for tracking training progress
+  const [trainingProgress, setTrainingProgress] = useState(0);
+  const [currentEpoch, setCurrentEpoch] = useState(0);
+  const [totalEpochs, setTotalEpochs] = useState(0);
+  const [processingStep, setProcessingStep] = useState('Initializing...');
 
   useEffect(() => {
     if (coinId) {
@@ -56,6 +62,9 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
     setIsLoading(true);
     setError(null);
     setModelStatus('Initializing...');
+    setTrainingProgress(0);
+    setCurrentEpoch(0);
+    setProcessingStep('Loading data');
     
     try {
       const isTfAvailable = await predictionsAPI.isApiAvailable();
@@ -67,8 +76,37 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
       }
       
       setModelStatus('Training model...');
+      setProcessingStep('Preparing model');
       
-      const result = await predictionsAPI.getPredictions(coinId, currency);
+      // Setup progress callback function
+      const progressCallback = (step: string, epoch: number, totalEpochs: number, logs?: any) => {
+        // Calculate overall progress (data loading: 10%, model setup: 10%, training: 60%, prediction: 20%)
+        let progress = 0;
+        
+        if (step === 'loading') {
+          progress = 10 * (epoch / totalEpochs); // 0-10%
+          setProcessingStep('Loading historical data');
+        } else if (step === 'preparing') {
+          progress = 10 + 10 * (epoch / totalEpochs); // 10-20%
+          setProcessingStep('Preparing training data');
+        } else if (step === 'training') {
+          progress = 20 + 60 * (epoch / totalEpochs); // 20-80%
+          setCurrentEpoch(epoch);
+          setTotalEpochs(totalEpochs);
+          setProcessingStep(`Training epoch ${epoch}/${totalEpochs}`);
+        } else if (step === 'predicting') {
+          progress = 80 + 20 * (epoch / totalEpochs); // 80-100%
+          setProcessingStep('Generating predictions');
+        }
+        
+        setTrainingProgress(Math.min(Math.round(progress), 99)); // Cap at 99% until complete
+      };
+      
+      const result = await predictionsAPI.getPredictions(coinId, currency, 180, progressCallback);
+      
+      // Set final progress to 100%
+      setTrainingProgress(100);
+      setProcessingStep('Complete');
       
       setPredictions(result.predictions);
       setConfidence(result.confidence);
@@ -122,11 +160,27 @@ const PricePrediction: React.FC<PricePredictionProps> = ({ coinId, historicalDat
       
       {isLoading ? (
         <div className="training-indicator">
-          <div className="ai-pulse-animation"></div>
-          <div className="training-progress">
-            <div className="progress-bar"></div>
+          <div 
+            className="ai-pulse-animation"
+            style={{
+              opacity: 0.3 + (trainingProgress / 100) * 0.7,
+              transform: `scale(${0.85 + (trainingProgress / 100) * 0.15})`
+            }}
+          >
+            <span className="progress-value">{trainingProgress}%</span>
           </div>
-          <p>AI model in training</p>
+          <div className="training-progress">
+            <div 
+              className="progress-bar"
+              style={{ width: `${trainingProgress}%` }}
+            ></div>
+          </div>
+          <p>{processingStep}</p>
+          {currentEpoch > 0 && totalEpochs > 0 && (
+            <p className="epoch-display">
+              <small>Epoch: {currentEpoch}/{totalEpochs}</small>
+            </p>
+          )}
         </div>
       ) : error ? (
         <div className="prediction-error">

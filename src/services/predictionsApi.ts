@@ -29,6 +29,7 @@ class PredictionsAPI {
     coinId: string;
     currency: string;
     days: number;
+    progressCallback?: (step: string, epoch: number, totalEpochs: number, logs?: any) => void;
   }> = [];
   private readonly lookback = 30; // Reduced for faster training
   private readonly modelCache: Record<string, {
@@ -41,7 +42,11 @@ class PredictionsAPI {
   /**
    * Initialize and train a TensorFlow.js model with improved architecture
    */
-  private async initializeModel(historicalData: number[][], coinId: string): Promise<{min: number, max: number}> {
+  private async initializeModel(
+    historicalData: number[][], 
+    coinId: string, 
+    progressCallback?: (step: string, epoch: number, totalEpochs: number, logs?: any) => void
+  ): Promise<{min: number, max: number}> {
     try {
       // Check if we have a cached model that was updated less than 1 hour ago
       const cacheKey = `${coinId}`;
@@ -83,15 +88,27 @@ class PredictionsAPI {
       
       // Train the model with more epochs for better accuracy
       this.isModelTraining = true;
+      const totalEpochs = 60; // Define total epochs as a constant
+      
       await this.model.fit(x, y, {
-        epochs: 60, // Increased from 25 to 60 epochs for better training
+        epochs: totalEpochs,
         batchSize: 32,
         shuffle: true,
         validationSplit: 0.2,
         callbacks: {
+          onEpochBegin: (epoch) => {
+            if (progressCallback) {
+              // Send progress update at the start of each epoch
+              progressCallback('training', epoch + 1, totalEpochs);
+            }
+          },
           onEpochEnd: (epoch, logs) => {
             if (epoch % 5 === 0) {
               console.log(`Epoch ${epoch}: loss = ${logs?.loss}, val_loss = ${logs?.val_loss}`);
+            }
+            if (progressCallback) {
+              // Send updated progress at the end of each epoch with logs
+              progressCallback('training', epoch + 1, totalEpochs, logs);
             }
           }
         }
@@ -441,7 +458,8 @@ class PredictionsAPI {
         const result = await this.generatePrediction(
           nextPrediction.coinId,
           nextPrediction.currency,
-          nextPrediction.days
+          nextPrediction.days,
+          nextPrediction.progressCallback
         );
         nextPrediction.resolve(result);
       } catch (error) {
@@ -464,22 +482,43 @@ class PredictionsAPI {
   private async generatePrediction(
     coinId: string,
     currency: string = 'usd',
-    days: number = 180
+    days: number = 180,
+    progressCallback?: (step: string, epoch: number, totalEpochs: number, logs?: any) => void
   ): Promise<PredictionResult> {
     try {
+      // Report progress - loading data stage
+      if (progressCallback) {
+        progressCallback('loading', 1, 10);
+      }
+      
       // Get historical data
       const historicalPrices = await this.getExtendedHistoricalData(coinId, currency);
+      
+      // Report progress - preparing data stage
+      if (progressCallback) {
+        progressCallback('preparing', 1, 5);
+      }
       
       // Get current price
       const currentPrice = historicalPrices[historicalPrices.length - 1][1];
       
       // Initialize and train model if not already done
-      const { min, max } = await this.initializeModel(historicalPrices, coinId);
+      const { min, max } = await this.initializeModel(historicalPrices, coinId, progressCallback);
+      
+      // Report progress - prediction stage start
+      if (progressCallback) {
+        progressCallback('predicting', 1, 4);
+      }
       
       // Make predictions for different timeframes
       const predictions1d = await this.predictFuturePrices(historicalPrices, 1, min, max);
+      if (progressCallback) progressCallback('predicting', 2, 4);
+      
       const predictions7d = await this.predictFuturePrices(historicalPrices, 7, min, max);
+      if (progressCallback) progressCallback('predicting', 3, 4);
+      
       const predictions30d = await this.predictFuturePrices(historicalPrices, 30, min, max);
+      if (progressCallback) progressCallback('predicting', 4, 4);
       
       // Calculate metrics using cross-validation
       const testSize = Math.min(20, Math.floor(historicalPrices.length * 0.2));
@@ -540,11 +579,16 @@ class PredictionsAPI {
   /**
    * Get price predictions for a cryptocurrency with improved accuracy
    * Public method that uses a queue to prevent concurrent model training
+   * @param coinId The ID of the coin to predict
+   * @param currency Currency to use for predictions (default: USD)
+   * @param days Number of days to predict into the future (default: 180)
+   * @param progressCallback Optional callback function for tracking training progress
    */
   async getPredictions(
     coinId: string, 
-    currency: string = 'usd', 
-    days: number = 180
+    currency: string = 'usd',
+    days: number = 180,
+    progressCallback?: (step: string, epoch: number, totalEpochs: number, logs?: any) => void
   ): Promise<PredictionResult> {
     // Use the queue system to prevent concurrent model training
     return new Promise((resolve, reject) => {
@@ -554,7 +598,8 @@ class PredictionsAPI {
         reject,
         coinId,
         currency,
-        days
+        days,
+        progressCallback
       });
       
       // Try to process the queue (if not already processing)
