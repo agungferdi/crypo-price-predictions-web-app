@@ -649,7 +649,94 @@ class ForecastsAPI {
   }
 
   /**
-   * Apply realistic constraints to price forecasts based on coin characteristics and timeframe
+   * Get current Bitcoin cycle position
+   * Simple implementation of the 4-year Bitcoin halving cycle
+   */
+  private getBitcoinCyclePosition(): {
+    phase: 'accumulation' | 'bull' | 'peak' | 'bear',
+    cyclePercentage: number, // 0-100%
+    bullishFactor: number   // 0-2 range (higher in bull market)
+  } {
+    // Bitcoin halving dates (approximate)
+    const halvings = [
+      new Date('2012-11-28').getTime(),
+      new Date('2016-07-09').getTime(), 
+      new Date('2020-05-11').getTime(),
+      new Date('2024-04-20').getTime(), // Most recent halving
+      new Date('2028-05-01').getTime()  // Estimated next halving
+    ];
+
+    const now = Date.now();
+    
+    // Find the current cycle (between two halvings)
+    let currentHalvingStart = halvings[0];
+    let nextHalving = halvings[1];
+    
+    for (let i = 0; i < halvings.length - 1; i++) {
+      if (now >= halvings[i] && now < halvings[i + 1]) {
+        currentHalvingStart = halvings[i];
+        nextHalving = halvings[i + 1];
+        break;
+      }
+    }
+
+    // Calculate position in the cycle as a percentage
+    const cycleDuration = nextHalving - currentHalvingStart;
+    const timeElapsed = now - currentHalvingStart;
+    const cyclePercentage = (timeElapsed / cycleDuration) * 100;
+    
+    // Define the phases of the Bitcoin cycle
+    let phase: 'accumulation' | 'bull' | 'peak' | 'bear';
+    let bullishFactor: number;
+    
+    // Simple model of the 4-year Bitcoin cycle:
+    // 0-15%: Post-halving accumulation (neutral)
+    // 15-65%: Bull market (bullish, strongest from 30-50%)
+    // 65-75%: Market peak (transition from bull to bear)
+    // 75-100%: Bear market (bearish, weakest at 85-95%)
+    
+    if (cyclePercentage < 15) {
+      phase = 'accumulation';
+      bullishFactor = 0.8 + (cyclePercentage / 15) * 0.4; // 0.8-1.2
+    } 
+    else if (cyclePercentage < 65) {
+      phase = 'bull';
+      // Strength increases toward middle of bull market then slightly decreases
+      const bullMarketPosition = (cyclePercentage - 15) / 50; // 0-1 in bull market
+      
+      if (bullMarketPosition < 0.7) {
+        // First 70% of the bull market - increasing strength
+        bullishFactor = 1.2 + (bullMarketPosition / 0.7) * 0.8; // 1.2-2.0
+      } else {
+        // Last 30% of the bull market - slightly weakening but still bullish
+        bullishFactor = 2.0 - ((bullMarketPosition - 0.7) / 0.3) * 0.3; // 2.0-1.7
+      }
+    } 
+    else if (cyclePercentage < 75) {
+      phase = 'peak';
+      // Rapid decline from peak
+      const peakPosition = (cyclePercentage - 65) / 10; // 0-1 in peak phase
+      bullishFactor = 1.7 - peakPosition * 1.0; // 1.7-0.7 (rapidly falling)
+    } 
+    else {
+      phase = 'bear';
+      // Bear market bottoms around 85-90% of the cycle
+      const bearPosition = (cyclePercentage - 75) / 25; // 0-1 in bear phase
+      
+      if (bearPosition < 0.6) {
+        // First 60% of the bear market - decreasing strength
+        bullishFactor = 0.7 - (bearPosition * 0.2); // 0.7-0.5 (decreasing)
+      } else {
+        // Last 40% of the bear market - gradually recovering for next cycle
+        bullishFactor = 0.5 + ((bearPosition - 0.6) / 0.4) * 0.3; // 0.5-0.8 (slowly rising)
+      }
+    }
+    
+    return { phase, cyclePercentage, bullishFactor };
+  }
+  
+  /**
+   * Apply realistic constraints to short-term forecasts with much stricter limits
    */
   private applyRealisticConstraints(
     forecasts: number[], 
@@ -659,158 +746,164 @@ class ForecastsAPI {
     volatility: number,
     recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
   ): number[] {
-    // Get characteristics for the specific coin
-    const coinProfile = this.getCoinProfile(coinId, currentPrice);
+    // Get Bitcoin cycle position
+    const bitcoinCycle = this.getBitcoinCyclePosition();
     
-    // Determine maximum reasonable daily movement based on coin's profile and recent behavior
-    const maxDailyPctChange = this.getRealisticDailyLimit(coinProfile, volatility, recentTrend);
+    // Define much stricter volatility multipliers based on market cap and coin type
+    let volatilityMultiplier: number;
     
-    // For multi-day forecasts, the maximum cumulative movement increases but not linearly
-    const maxCumulativePctChange = this.getMaximumCumulativeChange(maxDailyPctChange, days, coinProfile.marketCap);
+    // Define hard caps on maximum monthly returns based on historical performance
+    // These are significantly reduced from previous implementation
+    if (coinId === 'bitcoin') {
+      // Bitcoin is the least volatile major crypto
+      volatilityMultiplier = 0.5;
+    } 
+    else if (coinId === 'ethereum') {
+      // Ethereum slightly more volatile than BTC but still relatively stable
+      volatilityMultiplier = 0.6;
+    }
+    else if (['binancecoin', 'solana', 'cardano', 'ripple', 'polkadot'].includes(coinId)) {
+      // Medium-cap coins
+      volatilityMultiplier = 0.7;
+    }
+    else if (['dogecoin', 'shiba-inu'].includes(coinId)) {
+      // Meme coins - more volatile
+      volatilityMultiplier = 0.9;
+    }
+    else if (coinId.includes('usd') || coinId.includes('tether') || coinId.includes('dai')) {
+      // Stablecoins - extremely low volatility
+      volatilityMultiplier = 0.01;
+    }
+    else {
+      // Default for other altcoins
+      volatilityMultiplier = 0.8;
+    }
     
-    // Calculate the maximum allowed price change based on current price
-    const maxPriceIncrease = currentPrice * (1 + maxCumulativePctChange);
-    const maxPriceDecrease = currentPrice * (1 - maxCumulativePctChange * 0.8); // Asymmetric - drops typically smaller than pumps
+    // HARD CAPS on maximum changes by timeframe - based on historical crypto market behavior
+    // These caps override ML model predictions when they're unrealistic
+    let maxMonthlyPctChange: number;
     
-    const constrainedForecasts = forecasts.map((forecast, i) => {
-      // For daily forecasts, apply tighter constraints for initial days
-      const dayIndex = i;
-      const dayFactor = Math.min(dayIndex + 1, 10) / 10; // Gradually loosen constraints up to day 10
-      
-      // Day-adjusted constraints
-      const adjustedMaxIncrease = currentPrice * (1 + (maxCumulativePctChange * dayFactor));
-      const adjustedMaxDecrease = currentPrice * (1 - (maxCumulativePctChange * 0.8 * dayFactor));
-      
-      // Constrain the forecast within realistic bounds
-      return Math.min(Math.max(forecast, adjustedMaxDecrease), adjustedMaxIncrease);
+    // Set absolute maximum monthly percentage changes based on coin and cycle phase
+    if (coinId === 'bitcoin') {
+      if (bitcoinCycle.phase === 'bull') {
+        maxMonthlyPctChange = 0.30; // 30% max monthly gain for BTC in bull market
+      } else if (bitcoinCycle.phase === 'bear') {
+        maxMonthlyPctChange = 0.20; // 20% max monthly change in bear market
+      } else {
+        maxMonthlyPctChange = 0.25; // 25% in accumulation/peak phases
+      }
+    } 
+    else if (coinId === 'ethereum') {
+      if (bitcoinCycle.phase === 'bull') {
+        maxMonthlyPctChange = 0.35; // 35% max monthly gain for ETH in bull market
+      } else if (bitcoinCycle.phase === 'bear') {
+        maxMonthlyPctChange = 0.25; // 25% max monthly change in bear market
+      } else {
+        maxMonthlyPctChange = 0.30; // 30% in accumulation/peak phases
+      }
+    }
+    else if (coinId.includes('usd') || coinId.includes('tether') || coinId.includes('dai')) {
+      // Stablecoins should stay very close to $1
+      maxMonthlyPctChange = 0.02; // 2% max monthly change for stablecoins
+    }
+    else {
+      // Other cryptocurrencies
+      if (bitcoinCycle.phase === 'bull') {
+        maxMonthlyPctChange = 0.40; // 40% max monthly gain for alts in bull market
+      } else if (bitcoinCycle.phase === 'bear') {
+        maxMonthlyPctChange = 0.30; // 30% max monthly change in bear market
+      } else {
+        maxMonthlyPctChange = 0.35; // 35% in accumulation/peak phases
+      }
+    }
+    
+    // Scale maximum change based on timeframe using a conservative model
+    // Short timeframes should have very limited movement
+    let maxAllowedPctChange: number;
+    
+    if (days === 1) {
+      // Daily change should be very limited
+      maxAllowedPctChange = maxMonthlyPctChange * 0.1; // Max ~3-4% for major coins
+    } 
+    else if (days <= 7) {
+      // Weekly change - about 35% of the monthly max
+      maxAllowedPctChange = maxMonthlyPctChange * 0.35;
+    }
+    else if (days <= 30) {
+      // Monthly change - use the full monthly limit
+      maxAllowedPctChange = maxMonthlyPctChange;
+    }
+    else {
+      // For longer timeframes, scale more conservatively using sqrt
+      maxAllowedPctChange = maxMonthlyPctChange * Math.sqrt(days / 30);
+    }
+    
+    // Make sure we're not exceeding cycle-appropriate limits for longer timeframes
+    if (days > 90) {
+      // Apply cycle-based cap for extended forecasts
+      const cycleAppropriateMax = this.getCycleAppropriateMaxReturn(bitcoinCycle.phase, days);
+      maxAllowedPctChange = Math.min(maxAllowedPctChange, cycleAppropriateMax);
+    }
+
+    // Direction bias from recent momentum
+    // Modest impact on max change - much less than previous implementation
+    const momentumFactor = 1 + (recentTrend.momentum * 0.2); // 0.8-1.2 range
+    
+    // Adjust the max change with momentum but keep it conservative
+    maxAllowedPctChange *= momentumFactor;
+    
+    // Apply final volatility adjustment
+    const finalMaxPctChange = maxAllowedPctChange * volatilityMultiplier;
+    
+    // Calculate absolute price limits
+    const maxAllowedPrice = currentPrice * (1 + finalMaxPctChange);
+    const minAllowedPrice = currentPrice * Math.max(0.5, (1 - finalMaxPctChange * 0.8)); // Limit losses more
+
+    // Apply constraints to all forecasts to keep them reasonable
+    return forecasts.map(forecast => {
+      return Math.min(Math.max(forecast, minAllowedPrice), maxAllowedPrice);
     });
-    
-    return constrainedForecasts;
   }
-
+  
   /**
-   * Get the maximum realistic daily percentage change for a particular coin
+   * Get the maximum appropriate returns based on cycle phase and timeframe
    */
-  private getRealisticDailyLimit(
-    coinProfile: {
-      marketCap: 'large' | 'medium' | 'small',
-      type: 'major' | 'altcoin' | 'token',
-      baseVolatility: number
-    },
-    historicalVolatility: number,
-    recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
-  ): number {
-    // Base daily limits by coin type (derived from years of crypto data)
-    let baseDailyLimit: number;
+  private getCycleAppropriateMaxReturn(phase: 'accumulation' | 'bull' | 'peak' | 'bear', days: number): number {
+    // Convert days to years for easier calculation
+    const years = days / 365;
     
-    switch (coinProfile.marketCap) {
-      case 'large': // BTC, ETH
-        baseDailyLimit = 0.08; // 8% max for major coins like BTC/ETH on normal days
+    // Define base annual returns by cycle phase
+    let baseAnnualReturn: number;
+    switch (phase) {
+      case 'bull':
+        baseAnnualReturn = 1.0; // 100% annual in bull phase
         break;
-      case 'medium': // Top 20 coins
-        baseDailyLimit = 0.12; // 12% for medium cap coins
+      case 'bear':
+        baseAnnualReturn = -0.3; // -30% annual in bear phase
         break;
-      case 'small': // Smaller coins
-        baseDailyLimit = 0.20; // 20% for small caps
+      case 'accumulation':
+        baseAnnualReturn = 0.2; // 20% annual in accumulation
+        break;
+      case 'peak':
+        baseAnnualReturn = 0.0; // 0% at market peak transition
         break;
       default:
-        baseDailyLimit = 0.10;
+        baseAnnualReturn = 0.15; // Default modest growth
     }
     
-    // Adjust limit based on historical and recent volatility
-    const volatilityFactor = Math.sqrt(historicalVolatility * 20); // Square root to dampen extreme values
-    const recentActivityFactor = Math.sqrt(recentTrend.recentVolatility);
+    // For multi-year forecasts, regress towards historical mean
+    if (years > 1) {
+      const historicalMean = 0.2; // 20% long-term crypto market average
+      const regressionFactor = Math.min(0.8, (years - 1) * 0.4); // How much to blend
+      baseAnnualReturn = baseAnnualReturn * (1 - regressionFactor) + historicalMean * regressionFactor;
+    }
     
-    // Direction bias: during strong trends, allow more movement in trend direction
-    const momentumAdjustment = Math.abs(recentTrend.momentum) * 0.3; // 0-0.3 addition
-    
-    // Calculate final daily limit - with realistic constraints
-    const finalDailyLimit = baseDailyLimit * volatilityFactor * recentActivityFactor + momentumAdjustment;
-    
-    // Cap the maximum daily change to prevent absurd forecasts
-    return Math.min(Math.max(finalDailyLimit, 0.03), 0.30); // Between 3% and 30%
+    // Calculate max return using compound growth
+    return Math.pow(1 + baseAnnualReturn, years) - 1;
   }
 
   /**
-   * Get the maximum cumulative percentage change for multi-day forecasts
-   */
-  private getMaximumCumulativeChange(
-    dailyLimit: number,
-    days: number,
-    marketCapSize: 'large' | 'medium' | 'small'
-  ): number {
-    // Maximum changes don't scale linearly with days
-    // Use square root scaling to model realistic crypto behavior
-    let scaleFactor: number;
-    
-    switch (marketCapSize) {
-      case 'large':
-        scaleFactor = 1.8; // Lower scale factor for large caps (more stable)
-        break;
-      case 'medium':
-        scaleFactor = 2.2; // Medium scaling for mid caps
-        break;
-      case 'small':
-        scaleFactor = 2.5; // Higher scaling for small caps (more volatile)
-        break;
-      default:
-        scaleFactor = 2.0;
-    }
-    
-    const cumulativeChange = dailyLimit * scaleFactor * Math.sqrt(days);
-    
-    // Set realistic caps based on timeframe
-    if (days <= 1) return Math.min(dailyLimit, 0.08); // 1-day: maximum 8% for major coins
-    if (days <= 7) return Math.min(cumulativeChange, 0.30); // 1-week: maximum 30%
-    if (days <= 30) return Math.min(cumulativeChange, 0.70); // 1-month: maximum 70%
-    
-    // For longer periods, allow higher caps but still reasonable
-    return Math.min(cumulativeChange, 1.50); // Maximum 150% for any timeframe
-  }
-
-  /**
-   * Get the profile characteristics for a specific cryptocurrency
-   */
-  private getCoinProfile(coinId: string, currentPrice: number): {
-    marketCap: 'large' | 'medium' | 'small',
-    type: 'major' | 'altcoin' | 'token',
-    baseVolatility: number
-  } {
-    // Define profiles for common cryptocurrencies
-    const knownCoins: Record<string, {
-      marketCap: 'large' | 'medium' | 'small',
-      type: 'major' | 'altcoin' | 'token',
-      baseVolatility: number
-    }> = {
-      'bitcoin': { marketCap: 'large', type: 'major', baseVolatility: 0.03 },
-      'ethereum': { marketCap: 'large', type: 'major', baseVolatility: 0.04 },
-      'tether': { marketCap: 'large', type: 'token', baseVolatility: 0.005 }, // stablecoin
-      'binancecoin': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.05 },
-      'ripple': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.06 },
-      'cardano': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.07 },
-      'solana': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.08 },
-      'polkadot': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.08 },
-      'dogecoin': { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.09 },
-      'shiba-inu': { marketCap: 'small', type: 'token', baseVolatility: 0.12 },
-    };
-    
-    // Return known profile or determine based on price
-    if (knownCoins[coinId]) {
-      return knownCoins[coinId];
-    }
-    
-    // Heuristics based on price if unknown
-    if (currentPrice > 1000) {
-      return { marketCap: 'large', type: 'major', baseVolatility: 0.04 };
-    } else if (currentPrice > 10) {
-      return { marketCap: 'medium', type: 'altcoin', baseVolatility: 0.06 };
-    } else {
-      return { marketCap: 'small', type: 'token', baseVolatility: 0.10 };
-    }
-  }
-
-  /**
-   * Improved long-term forecast model that's more realistic
+   * Improved long-term prediction with much more realistic constraints
    */
   private improvedLongTermPrediction(
     currentPrice: number, 
@@ -820,119 +913,86 @@ class ForecastsAPI {
     coinId: string,
     recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
   ): number {
-    // Get crypto market cycle position (based on Bitcoin halving cycles and general market sentiment)
-    const cycleInfo = this.getCryptoMarketCycleInfo();
+    // Get Bitcoin cycle position
+    const bitcoinCycle = this.getBitcoinCyclePosition();
     
-    // Get coin profile
-    const coinProfile = this.getCoinProfile(coinId, currentPrice);
+    // Handle stablecoins specially
+    if (coinId.includes('usd') || coinId.includes('tether') || coinId.includes('dai')) {
+      // Stablecoins should remain extremely close to their peg
+      return currentPrice * (1 + (Math.random() * 0.02 - 0.01)); // ±1% maximum variation
+    }
     
-    // Convert days to years
+    // Convert days to years for calculation
     const years = days / 365;
     
-    // Establish baseline yearly growth for this type of coin
-    let baselineGrowth: number;
-    let maxYearlyGrowth: number;
-    let minYearlyGrowth: number;
+    // Define MUCH more conservative base growth rates
+    let baseAnnualGrowth: number;
     
-    switch (coinProfile.marketCap) {
-      case 'large':
-        // Large caps have more modest but consistent growth
-        baselineGrowth = cycleInfo.inBullMarket ? 0.60 : 0.15;
-        maxYearlyGrowth = 2.0; // 200% max yearly growth
-        minYearlyGrowth = -0.40; // -40% min yearly growth
+    // These rates are significantly reduced from previous values
+    switch (bitcoinCycle.phase) {
+      case 'accumulation':
+        baseAnnualGrowth = 0.15; // 15% annual growth in accumulation phase
         break;
-      case 'medium':
-        // Mid caps can grow faster but also lose more
-        baselineGrowth = cycleInfo.inBullMarket ? 0.80 : 0.10;
-        maxYearlyGrowth = 3.0; // 300% max yearly growth
-        minYearlyGrowth = -0.50; // -50% min yearly growth
+      case 'bull':
+        baseAnnualGrowth = 0.40; // 40% annual growth in bull market (down from 100%)
         break;
-      case 'small':
-        // Small caps have extreme potential in both directions
-        baselineGrowth = cycleInfo.inBullMarket ? 1.20 : 0.05;
-        maxYearlyGrowth = 5.0; // 500% max yearly growth
-        minYearlyGrowth = -0.70; // -70% min yearly growth
+      case 'peak':
+        baseAnnualGrowth = -0.05; // 5% annual decline at market peak (transitional)
         break;
-      default:
-        baselineGrowth = cycleInfo.inBullMarket ? 0.70 : 0.10;
-        maxYearlyGrowth = 3.0;
-        minYearlyGrowth = -0.50;
+      case 'bear':
+        baseAnnualGrowth = -0.20; // 20% annual decline in bear market
+        break;
     }
     
-    // Modulate baseline growth based on where we are in the crypto cycle
-    const cycleBasedGrowth = baselineGrowth * cycleInfo.cycleFactor;
+    // Apply more conservative growth multipliers based on coin type
+    let growthMultiplier: number;
     
-    // Consider historical growth but cap it to realistic bounds
-    const cappedHistoricalTrend = Math.max(
-      minYearlyGrowth,
-      Math.min(yearlyGrowthTrend, maxYearlyGrowth)
-    );
+    if (coinId === 'bitcoin') {
+      growthMultiplier = 1.0; // Bitcoin is the baseline
+    } else if (coinId === 'ethereum') {
+      growthMultiplier = 1.1; // Ethereum slightly more volatile (down from 1.2)
+    } else if (['binancecoin', 'cardano', 'solana'].includes(coinId)) {
+      growthMultiplier = 1.2; // Major altcoins (down from 1.5)
+    } else {
+      growthMultiplier = 1.3; // Other altcoins (down from 2.0)
+    }
     
-    // Blend recent historical trend with baseline growth
-    // Weight historical data less for longer forecasts (reversion to mean)
-    const historicalWeight = Math.max(0, 1 - (years * 0.3)); // Decrease weight as time increases
-    const blendedYearlyGrowth = 
-      (cappedHistoricalTrend * historicalWeight) + 
-      (cycleBasedGrowth * (1 - historicalWeight));
+    // Calculate adjusted annual growth rate for this coin
+    const coinAnnualGrowth = baseAnnualGrowth * growthMultiplier;
+    
+    // For long-term forecasts, historical trend gets more weight
+    // But cap historical growth to reasonable values
+    const cappedHistoricalGrowth = Math.max(-0.5, Math.min(yearlyGrowthTrend, 0.7));
+    
+    // Weight between historical and cycle-based growth based on timeframe
+    const historicalWeight = Math.max(0, Math.min(0.7, 1 - (years * 0.3)));
+    const blendedGrowth = (cappedHistoricalGrowth * historicalWeight) + 
+                         (coinAnnualGrowth * (1 - historicalWeight));
+    
+    // Apply modest momentum adjustment
+    const momentumAdjustment = recentTrend.momentum * 0.1; // Reduced from 0.3
+    const finalGrowth = blendedGrowth * (1 + momentumAdjustment);
+    
+    // Calculate final price with compound growth
+    let forecastPrice = currentPrice * Math.pow(1 + finalGrowth, years);
+    
+    // Apply final sanity check - no prediction should be more than 10x or less than 0.1x
+    // over a 4-year period for major coins
+    if (coinId === 'bitcoin' || coinId === 'ethereum') {
+      const maxLongTermMultiplier = 3 * years; // Max 3x per year for major coins
+      const minLongTermMultiplier = Math.pow(0.4, years); // Min 0.4x per year
       
-    // For BNB-specific adjustment: ensure annual growth is at least 5% for bullish forecasts
-    // and no worse than -5% for bearish forecasts in long term
-    if (coinId === 'binancecoin' && days >= 365) {
-      if (blendedYearlyGrowth > 0) {
-        return currentPrice * Math.pow(1 + Math.max(0.05, blendedYearlyGrowth), years);
-      } else {
-        return currentPrice * Math.pow(1 + Math.max(-0.05, blendedYearlyGrowth), years);
-      }
+      const maxPrice = currentPrice * maxLongTermMultiplier;
+      const minPrice = currentPrice * minLongTermMultiplier;
+      
+      forecastPrice = Math.min(Math.max(forecastPrice, minPrice), maxPrice);
     }
     
-    // Apply compound growth
-    return currentPrice * Math.pow(1 + blendedYearlyGrowth, years);
+    return forecastPrice;
   }
 
   /**
-   * Get current info about the crypto market cycle
-   */
-  private getCryptoMarketCycleInfo(): { 
-    inBullMarket: boolean, 
-    cycleFactor: number, // 0-2 factor to multiply growth by (>1 in bull, <1 in bear)
-    cyclePosition: number // 0-1 position in the 4-year cycle
-  } {
-    // Get approximate position in 4-year Bitcoin cycle based on halving events
-    // May 2024 was the latest halving, so use that as reference
-    const MS_PER_DAY = 86400000;
-    const CYCLE_DAYS = 1461; // ~4 years
-    const lastHalvingDate = new Date(2024, 4, 4).getTime(); // May 4, 2024
-    const daysSinceHalving = Math.max(0, (Date.now() - lastHalvingDate) / MS_PER_DAY);
-    
-    // Position in cycle (0-1)
-    const cyclePosition = (daysSinceHalving % CYCLE_DAYS) / CYCLE_DAYS;
-    
-    // Determine if we're in a bull market (simplified model)
-    // Typically, bull runs start several months after halving and last about 1-1.5 years
-    const inBullMarket = cyclePosition > 0.1 && cyclePosition < 0.5;
-    
-    // Calculate cycle factor - higher in bull markets, lower in bear markets
-    let cycleFactor: number;
-    
-    if (cyclePosition < 0.1) { // Early post-halving phase (accumulation)
-      cycleFactor = 0.8 + cyclePosition * 2; // 0.8-1.0, gradually rising
-    } else if (cyclePosition < 0.5) { // Bull market phase
-      cycleFactor = 1.0 + (cyclePosition - 0.1) * 2; // 1.0-1.8, rising throughout bull market
-    } else if (cyclePosition < 0.75) { // Bear market phase
-      cycleFactor = 1.8 - (cyclePosition - 0.5) * 3.2; // 1.8-0.8, falling in bear market
-    } else { // Late bear/early accumulation
-      cycleFactor = 0.8; // Bottom of cycle
-    }
-    
-    return {
-      inBullMarket,
-      cycleFactor,
-      cyclePosition
-    };
-  }
-  
-  /**
-   * Calculate an adjusted confidence level based on market conditions
+   * Calculate confidence based on Bitcoin cycle position
    */
   private calculateAdjustedConfidence(
     baseConfidence: number, 
@@ -940,33 +1000,47 @@ class ForecastsAPI {
     volatility: number,
     recentTrend: { momentum: number, recentVolatility: number, patternStrength: number }
   ): number {
-    // Base confidence from model accuracy
+    // Get Bitcoin cycle information
+    const bitcoinCycle = this.getBitcoinCyclePosition();
+    
+    // Start with base confidence
     let confidence = baseConfidence;
     
-    // Higher confidence for established coins
-    const coinProfile = this.getCoinProfile(coinId, 0);
-    
-    // Adjust confidence based on coin market cap
-    switch (coinProfile.marketCap) {
-      case 'large':
-        confidence *= 1.1; // 10% boost for large caps
-        break;
-      case 'small':
-        confidence *= 0.9; // 10% reduction for small caps
-        break;
+    // Adjust confidence based on cycle phase
+    // Higher confidence in established bull/bear markets
+    // Lower confidence during transitions
+    if (bitcoinCycle.phase === 'bull' && bitcoinCycle.cyclePercentage > 25 && bitcoinCycle.cyclePercentage < 60) {
+      // Well-established bull market - higher confidence
+      confidence *= 1.1;
+    } 
+    else if (bitcoinCycle.phase === 'bear' && bitcoinCycle.cyclePercentage > 80 && bitcoinCycle.cyclePercentage < 95) {
+      // Deep bear market - higher confidence (bottoming patterns)
+      confidence *= 1.05;
+    }
+    else if (bitcoinCycle.phase === 'peak') {
+      // Market peak transitions - lower confidence
+      confidence *= 0.9;
     }
     
-    // Reduce confidence when volatility is high
-    if (volatility > 0.05) {
-      confidence *= (1 - Math.min(0.2, volatility));
+    // Higher confidence for coins with established patterns
+    if (coinId === 'bitcoin') {
+      confidence *= 1.1;
+    } else if (coinId === 'ethereum') {
+      confidence *= 1.05;
+    } else if (coinId.includes('usd') || coinId.includes('tether')) {
+      // Very high confidence for stablecoins
+      return Math.min(95, confidence * 1.5);
     }
     
-    // Boost confidence when a strong pattern is detected
+    // Lower confidence for volatile assets
+    confidence *= Math.max(0.7, 1 - volatility * 2);
+    
+    // Strong patterns increase confidence
     if (recentTrend.patternStrength > 0.7) {
       confidence += recentTrend.patternStrength * 5;
     }
     
-    // Cap confidence to realistic range
+    // Keep confidence in reasonable range
     return Math.min(Math.max(confidence, 30), 90);
   }
 
