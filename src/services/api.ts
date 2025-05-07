@@ -167,6 +167,23 @@ export const coinGeckoAPI = {
     }
   },
 
+  // Get historical chart data for a specific coin using date range
+  getCoinChartRange: async (coinId: string, from: number, to: number, currency = 'usd') => {
+    try {
+      const response = await api.get(`/coins/${coinId}/market_chart/range`, {
+        params: {
+          vs_currency: currency,
+          from: from,
+          to: to,
+        },
+      });
+      return response.data as ChartData;
+    } catch (error) {
+      console.error(`Error fetching chart range data for coin ${coinId}:`, error);
+      throw error;
+    }
+  },
+
   // Search for coins, categories, and exchanges
   searchCoins: async (query: string) => {
     try {

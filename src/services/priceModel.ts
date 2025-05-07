@@ -95,8 +95,9 @@ export class PriceModel {
     
     // Generate predictions day by day
     for (let i = 0; i < days; i++) {
-      // Reshape for model input
-      const inputTensor = tf.tensor3d([currentSequence], [1, this.lookback, 1]);
+      // Reshape for model input - fixed to use proper shape formatting for tensor3d
+      const reshapedSequence: number[][][] = [currentSequence.map(value => [value])];
+      const inputTensor = tf.tensor3d(reshapedSequence);
       
       // Predict next value
       const predictionTensor = this.model!.predict(inputTensor) as tf.Tensor;
@@ -152,16 +153,19 @@ export class PriceModel {
     const normalizedPrices = prices.map(p => (p - min) / (max - min));
     
     // Create sequences for training
-    const sequences: number[][] = [];
+    const sequencesRaw: number[][] = [];
     const targets: number[] = [];
     
     for (let i = 0; i < normalizedPrices.length - this.lookback; i++) {
-      sequences.push(normalizedPrices.slice(i, i + this.lookback));
+      sequencesRaw.push(normalizedPrices.slice(i, i + this.lookback));
       targets.push(normalizedPrices[i + this.lookback]);
     }
     
+    // Convert to proper format for tensor3d (batch_size, lookback, features)
+    const sequences: number[][][] = sequencesRaw.map(seq => seq.map(value => [value]));
+    
     // Convert to tensors
-    const inputTensor = tf.tensor3d(sequences, [sequences.length, this.lookback, 1]);
+    const inputTensor = tf.tensor3d(sequences);
     const targetTensor = tf.tensor2d(targets, [targets.length, 1]);
     
     return {

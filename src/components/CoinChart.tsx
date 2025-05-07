@@ -72,7 +72,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
         padding: 10,
         titleFont: {
           size: 12,
-          weight: 'bold',
+          weight: 'bold' as const, // Fixed - use 'bold' as a const instead of string
         },
         bodyFont: {
           size: 12,
@@ -130,7 +130,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
       intersect: false,
     },
     hover: {
-      mode: 'index',
+      mode: 'index' as const,
       intersect: false,
     },
   };

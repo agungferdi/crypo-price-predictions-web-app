@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChartData } from '../services/api';
 import { forecastsAPI, ForecastResult } from '../services/forecastsApi';
 import './PriceForecast.css';
@@ -12,7 +12,7 @@ interface PriceForecastProps {
   historicalData?: ChartData | null;
 }
 
-const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency, historicalData }) => {
+const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedTimeframe, setSelectedTimeframe] = useState<TimeFrame>('1d');
   const [forecastResult, setForecastResult] = useState<ForecastResult | null>(null);
@@ -23,7 +23,6 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency, histori
     logs?: any;
   }>({ step: 'initializing', progress: 0, total: 100 });
   const [showModelInfo, setShowModelInfo] = useState<boolean>(false);
-  const timeframesRef = useRef<HTMLDivElement>(null);
 
   // Function to format currency values
   const formatCurrency = (value: number) => {

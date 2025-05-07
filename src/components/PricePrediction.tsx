@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { ChartData } from '../services/api';
-import { predictionsAPI, ModelMetrics, PredictionResult } from '../services/predictionsApi';
+import { predictionsAPI, ModelMetrics } from '../services/predictionsApi';
 import * as tf from '@tensorflow/tfjs';
 
 export type TimeFrame = '1d' | '7d' | '30d' | '365d' | '2y' | '4y';
 
 interface PriceForecastProps {
   coinId: string;
-  historicalData: ChartData | null;
   currency: string;
 }
 
-const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, historicalData, currency }) => {
+const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
   const [forecasts, setForecasts] = useState<Record<TimeFrame, number | null>>({
     '1d': null,
     '7d': null,
