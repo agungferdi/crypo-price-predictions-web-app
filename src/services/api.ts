@@ -2,9 +2,17 @@ import axios from 'axios';
 
 const API_KEY = 'CG-sou5TJWDNdLnDCbWMTPyi6bT';
 const BASE_URL = 'https://api.coingecko.com/api/v3';
+// CORS proxy for production environment
+const CORS_PROXY = 'https://corsproxy.io/?';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production' || window.location.hostname !== 'localhost';
+
+// Use CORS proxy in production, direct API in development
+const getBaseUrl = () => {
+  return IS_PRODUCTION ? `${CORS_PROXY}${encodeURIComponent(BASE_URL)}` : BASE_URL;
+};
 
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: getBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
     'x-cg-demo-api-key': API_KEY,

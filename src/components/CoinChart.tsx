@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Chart as ChartJS, ChartOptions } from 'chart.js';
 import {
-  Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
@@ -14,6 +14,7 @@ import { Line } from 'react-chartjs-2';
 import { coinGeckoAPI, ChartData } from '../services/api';
 import './CoinChart.css';
 
+// Register ChartJS components - ensure Filler is registered
 ChartJS.register(
   CategoryScale,
   LinearScale,
