@@ -1,44 +1,35 @@
 import * as tf from '@tensorflow/tfjs';
 
 export interface ModelMetrics {
-  mse: number;  // Mean Squared Error
-  mae: number;  // Mean Absolute Error
-  rmse: number; // Root Mean Squared Error
+  mse: number;
+  mae: number;
+  rmse: number;
 }
 
 export class PriceModel {
   private model: tf.Sequential | null = null;
-  private lookback: number = 30; // Number of days to look back for prediction
+  private lookback: number = 30;
   private isModelReady: boolean = false;
 
-  /**
-   * Initialize the TensorFlow.js model
-   */
   async init(): Promise<void> {
     await tf.ready();
     this.model = tf.sequential();
     
-    // Add layers to the model
-    // LSTM layer with 50 units and return sequences
     this.model.add(tf.layers.lstm({
       units: 50,
       returnSequences: true,
       inputShape: [this.lookback, 1]
     }));
     
-    // Add dropout for regularization
     this.model.add(tf.layers.dropout({ rate: 0.2 }));
     
-    // Another LSTM layer
     this.model.add(tf.layers.lstm({
       units: 50,
       returnSequences: false
     }));
     
-    // Output layer
     this.model.add(tf.layers.dense({ units: 1 }));
     
-    // Compile the model
     this.model.compile({
       optimizer: tf.train.adam(0.001),
       loss: 'meanSquaredError',
@@ -48,18 +39,13 @@ export class PriceModel {
     this.isModelReady = true;
   }
 
-  /**
-   * Train the model with historical price data
-   */
   async train(data: number[][], epochs: number = 20): Promise<tf.History> {
     if (!this.isModelReady || !this.model) {
       await this.init();
     }
     
-    // Prepare data for training
     const { inputs, targets } = this.prepareData(data);
     
-    // Train the model
     const history = await this.model!.fit(inputs, targets, {
       epochs,
       batchSize: 32,
@@ -68,16 +54,12 @@ export class PriceModel {
       callbacks: tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 5 })
     });
     
-    // Clean up tensors to prevent memory leaks
     inputs.dispose();
     targets.dispose();
     
     return history;
   }
 
-  /**
-   * Make predictions for future prices
-   */
   async predict(data: number[][], days: number): Promise<number[]> {
     if (!this.isModelReady || !this.model) {
       throw new Error('Model not ready. Please initialize and train first.');
@@ -87,31 +69,24 @@ export class PriceModel {
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     
-    // Get last sequence for prediction
     const lastSequence = prices.slice(-this.lookback).map(p => (p - min) / (max - min));
     let currentSequence = [...lastSequence];
     
     const predictions: number[] = [];
     
-    // Generate predictions day by day
     for (let i = 0; i < days; i++) {
-      // Reshape for model input - fixed to use proper shape formatting for tensor3d
       const reshapedSequence: number[][][] = [currentSequence.map(value => [value])];
       const inputTensor = tf.tensor3d(reshapedSequence);
       
-      // Predict next value
       const predictionTensor = this.model!.predict(inputTensor) as tf.Tensor;
       const predictionValue = predictionTensor.dataSync()[0];
       
-      // Denormalize to get actual price
       const actualPrediction = predictionValue * (max - min) + min;
       predictions.push(actualPrediction);
       
-      // Update sequence for next prediction
       currentSequence.shift();
       currentSequence.push(predictionValue);
       
-      // Clean up tensors
       tf.dispose(inputTensor);
       tf.dispose(predictionTensor);
     }
@@ -119,9 +94,6 @@ export class PriceModel {
     return predictions;
   }
 
-  /**
-   * Calculate model performance metrics
-   */
   evaluateModel(actualPrices: number[], predictedPrices: number[]): ModelMetrics {
     const length = Math.min(actualPrices.length, predictedPrices.length);
     let sumSquaredError = 0;
@@ -140,19 +112,13 @@ export class PriceModel {
     return { mse, mae, rmse };
   }
 
-  /**
-   * Prepare data for the model
-   */
   private prepareData(data: number[][]): { inputs: tf.Tensor3D; targets: tf.Tensor2D } {
-    // Extract prices from data
     const prices = data.map(d => d[1]);
     
-    // Normalize data between 0-1
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     const normalizedPrices = prices.map(p => (p - min) / (max - min));
     
-    // Create sequences for training
     const sequencesRaw: number[][] = [];
     const targets: number[] = [];
     
@@ -161,10 +127,8 @@ export class PriceModel {
       targets.push(normalizedPrices[i + this.lookback]);
     }
     
-    // Convert to proper format for tensor3d (batch_size, lookback, features)
     const sequences: number[][][] = sequencesRaw.map(seq => seq.map(value => [value]));
     
-    // Convert to tensors
     const inputTensor = tf.tensor3d(sequences);
     const targetTensor = tf.tensor2d(targets, [targets.length, 1]);
     
@@ -174,9 +138,6 @@ export class PriceModel {
     };
   }
   
-  /**
-   * Dispose of the model and free up memory
-   */
   dispose(): void {
     if (this.model) {
       this.model.dispose();
@@ -186,5 +147,4 @@ export class PriceModel {
   }
 }
 
-// Create a singleton instance
 export const priceModel = new PriceModel();

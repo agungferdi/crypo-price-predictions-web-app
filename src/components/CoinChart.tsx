@@ -8,9 +8,11 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { coinGeckoAPI, ChartData } from '../services/api';
+import './CoinChart.css';
 
 ChartJS.register(
   CategoryScale,
@@ -19,7 +21,8 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );
 
 interface CoinChartProps {
@@ -31,7 +34,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<number>(7); // 7 days by default
+  const [timeRange, setTimeRange] = useState<number>(7);
 
   useEffect(() => {
     const fetchChartData = async () => {
@@ -53,7 +56,14 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
 
   const formatDate = (timestamp: number): string => {
     const date = new Date(timestamp);
-    return date.toLocaleDateString();
+    
+    if (timeRange <= 1) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (timeRange <= 7) {
+      return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
   };
 
   const chartOptions = {
@@ -72,7 +82,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
         padding: 10,
         titleFont: {
           size: 12,
-          weight: 'bold' as const, // Fixed - use 'bold' as a const instead of string
+          weight: 'bold' as const,
         },
         bodyFont: {
           size: 12,
@@ -109,7 +119,10 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
             size: 10,
           },
           callback: function(value: any) {
-            return value; // Now returning just the value without the currency code
+            if (value >= 1000) {
+              return '$' + value / 1000 + 'k';
+            }
+            return '$' + value;
           }
         },
       },
@@ -180,13 +193,13 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
         {[
           { value: 1, label: '24h' },
           { value: 7, label: '7d' },
-          { value: 30, label: '30d' },
-          { value: 90, label: '90d' },
-          { value: 365, label: '1y' }
+          { value: 30, label: '1M' },
+          { value: 90, label: '3M' },
+          { value: 365, label: '1Y' }
         ].map((period) => (
           <button 
             key={period.value}
-            className={timeRange === period.value ? 'active' : ''} 
+            className={`timeframe-pill ${timeRange === period.value ? 'active' : ''}`} 
             onClick={() => setTimeRange(period.value)}
           >
             {period.label}
@@ -204,10 +217,10 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
         
         {error && (
           <div className="chart-error">
-            <div className="error-icon-small">⚠️</div>
+            <div className="error-icon">⚠️</div>
             <p>{error}</p>
             <button 
-              className="retry-button-small"
+              className="retry-button"
               onClick={() => {
                 setChartData(null);
                 const fetchData = async () => {
@@ -231,7 +244,7 @@ const CoinChart: React.FC<CoinChartProps> = ({ coinId, currency }) => {
         )}
         
         {!isLoading && !error && data && (
-          <Line options={chartOptions} data={data} height={200} />
+          <Line options={chartOptions} data={data} height={250} />
         )}
       </div>
     </div>

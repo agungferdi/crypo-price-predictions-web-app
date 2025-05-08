@@ -3,7 +3,6 @@ import { ChartData } from '../services/api';
 import { forecastsAPI, ForecastResult } from '../services/forecastsApi';
 import './PriceForecast.css';
 
-// Timeframes for forecasts
 export type TimeFrame = '1d' | '7d' | '30d' | '365d' | '2y' | '4y';
 
 interface PriceForecastProps {
@@ -24,7 +23,6 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
   }>({ step: 'initializing', progress: 0, total: 100 });
   const [showModelInfo, setShowModelInfo] = useState<boolean>(false);
 
-  // Function to format currency values
   const formatCurrency = (value: number) => {
     if (!value && value !== 0) return 'N/A';
     
@@ -37,13 +35,11 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
     return formatter.format(value);
   };
 
-  // Get forecasts on component mount
   useEffect(() => {
     const fetchForecasts = async () => {
       try {
         setIsLoading(true);
         
-        // Check if TensorFlow.js is available in the browser
         const apiAvailable = await forecastsAPI.isApiAvailable();
         if (!apiAvailable) {
           console.error('TensorFlow.js not available in this browser');
@@ -51,7 +47,6 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
           return;
         }
 
-        // Get forecasts with progress tracking
         const result = await forecastsAPI.getPredictions(
           coinId,
           currency,
@@ -77,17 +72,14 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
     fetchForecasts();
   }, [coinId, currency]);
 
-  // Handle timeframe selection
   const handleTimeframeChange = (timeframe: TimeFrame) => {
     setSelectedTimeframe(timeframe);
   };
 
-  // Toggle model info visibility
   const toggleModelInfo = () => {
     setShowModelInfo(prev => !prev);
   };
 
-  // Close model info when clicking outside
   const handleClickOutside = (event: MouseEvent) => {
     const metricsPopup = document.getElementById(`metrics-${coinId}`);
     if (showModelInfo && metricsPopup && !metricsPopup.contains(event.target as Node)) {
@@ -95,7 +87,6 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
     }
   };
 
-  // Add event listener for clicking outside
   useEffect(() => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -103,7 +94,6 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
     };
   }, [showModelInfo, coinId]);
 
-  // Main render function
   const renderForecastContent = () => {
     if (isLoading) {
       return renderTrainingStatus();
@@ -215,7 +205,6 @@ const PriceForecast: React.FC<PriceForecastProps> = ({ coinId, currency }) => {
     );
   };
 
-  // Render training progress
   const renderTrainingStatus = () => {
     let progressPercent = 0;
     

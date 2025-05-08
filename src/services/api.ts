@@ -3,14 +3,13 @@ import axios from 'axios';
 const API_KEY = 'CG-sou5TJWDNdLnDCbWMTPyi6bT';
 const BASE_URL = 'https://api.coingecko.com/api/v3';
 
-// Create axios instance with default config
 const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    'x-cg-demo-api-key': API_KEY, // Use header for API key authentication (recommended approach)
+    'x-cg-demo-api-key': API_KEY,
   },
-  timeout: 15000, // 15 second timeout
+  timeout: 15000,
 });
 
 export interface Coin {
@@ -70,9 +69,7 @@ export interface CoinDetail {
   };
 }
 
-// API functions
 export const coinGeckoAPI = {
-  // Ping the API to check if it's working
   ping: async () => {
     try {
       const response = await api.get('/ping');
@@ -83,7 +80,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get list of supported coins
   getCoins: async () => {
     try {
       const response = await api.get('/coins/list');
@@ -94,7 +90,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get market data for coins (with pagination)
   getMarkets: async (currency = 'usd', page = 1, perPage = 20) => {
     try {
       const response = await api.get('/coins/markets', {
@@ -114,7 +109,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get detailed data for a specific coin
   getCoinDetails: async (coinId: string) => {
     try {
       const response = await api.get(`/coins/${coinId}`, {
@@ -134,7 +128,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get price data for multiple coins
   getPrices: async (coinIds: string[], currencies = ['usd']) => {
     try {
       const response = await api.get('/simple/price', {
@@ -151,7 +144,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get historical chart data for a specific coin
   getCoinChart: async (coinId: string, days = 7, currency = 'usd') => {
     try {
       const response = await api.get(`/coins/${coinId}/market_chart`, {
@@ -167,7 +159,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get historical chart data for a specific coin using date range
   getCoinChartRange: async (coinId: string, from: number, to: number, currency = 'usd') => {
     try {
       const response = await api.get(`/coins/${coinId}/market_chart/range`, {
@@ -184,7 +175,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Search for coins, categories, and exchanges
   searchCoins: async (query: string) => {
     try {
       const response = await api.get('/search', {
@@ -199,7 +189,6 @@ export const coinGeckoAPI = {
     }
   },
 
-  // Get trending coins
   getTrendingCoins: async () => {
     try {
       const response = await api.get('/search/trending');
